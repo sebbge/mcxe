@@ -1,9 +1,10 @@
 use std::{collections::HashSet, path::PathBuf, time::Duration};
+use url::Url;
 
 pub struct ManifestConfig {
-  pub url: String,
+  pub url: Url,
   pub path: Option<PathBuf>,
-  pub refresh_interval: Option<Duration>,
+  pub refresh_every: Option<Duration>,
   pub unsupported_versions: Option<HashSet<String>>,
 }
 impl ManifestConfig {
@@ -16,7 +17,7 @@ impl ManifestConfig {
 pub struct ManifestConfigBuilder {
   url: Option<String>,
   path: Option<PathBuf>,
-  refresh_interval: Option<Duration>,
+  refresh_every: Option<Duration>,
   unsupported_versions: Option<HashSet<String>>,
 }
 
@@ -31,8 +32,8 @@ impl ManifestConfigBuilder {
     self
   }
 
-  pub fn refresh_interval(mut self, interval: Duration) -> Self {
-    self.refresh_interval = Some(interval);
+  pub fn refresh_every(mut self, interval: Duration) -> Self {
+    self.refresh_every = Some(interval);
     self
   }
 
@@ -42,12 +43,16 @@ impl ManifestConfigBuilder {
   }
 
   pub fn build(self) -> crate::Result<ManifestConfig> {
+    let url = self.url.ok_or(crate::Error::Build(
+      "Minecraft version manifest URL is required.".into(),
+    ))?;
+
+    let url = Url::parse(&url).map_err(|e| crate::Error::Build(format!("Invalid asset URL: {}", e)))?;
+
     Ok(ManifestConfig {
-      url: self.url.ok_or(crate::Error::Build(
-        "Minecraft version manifest URL is required.".into(),
-      ))?,
+      url,
       path: self.path,
-      refresh_interval: self.refresh_interval,
+      refresh_every: self.refresh_every,
       unsupported_versions: self.unsupported_versions,
     })
   }

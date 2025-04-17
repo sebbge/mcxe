@@ -1,11 +1,7 @@
 mod version_manifest;
 pub use version_manifest::*;
 
-use super::models::{
-  child::ChildVersionMeta,
-  vanilla::FullVersionMeta,
-  version::{Version, VersionMeta, VersionStatus},
-};
+use crate::meta::{ChildVersionMeta, FullVersionMeta, Version, VersionMeta, VersionStatus};
 use indexmap::IndexMap;
 use std::path::{Path, PathBuf};
 
@@ -33,7 +29,7 @@ impl VersionManager {
     let version = match self.get_one(version_id) {
       Some(v) => v,
       None => {
-        return Err(crate::Error::Launcher(
+        return Err(crate::Error::Metadata(
           "The required metadata version does not exist or is not loaded.".into(),
         ));
       }
@@ -48,7 +44,7 @@ impl VersionManager {
     let version_url = match &version.url {
       Some(url) => url,
       None => {
-        return Err(crate::Error::Launcher(
+        return Err(crate::Error::Metadata(
           "The required metadata does not exist and there is no URL to retrieve it.".into(),
         ));
       }
@@ -95,14 +91,12 @@ impl VersionManager {
   pub async fn load_versions(&mut self) -> crate::Result<()> {
     let mut manifest = self.manifest.get().await?;
     let mut external_versions = IndexMap::new();
-
     let version_folders = crate::io::get_subfolders(&self.versions_dir).await?;
     for version_id in version_folders {
       let version_path = self.versions_dir.join(&version_id).join(format!("{version_id}.json"));
 
       if let Some(version) = manifest.versions.get_mut(&version_id) {
         if !version_path.exists() {
-          println!("{:#?}", version_path);
           version.status = VersionStatus::NeedsDownload;
           continue;
         }

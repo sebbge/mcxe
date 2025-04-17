@@ -1,12 +1,409 @@
-mod assets;
-pub use assets::AssetManager;
-mod client;
-pub use client::ClientManager;
-mod library;
-pub use library::LibraryManager;
-mod version;
-pub use version::{ManifestConfig, ManifestManager, VersionManager};
+mod models;
+pub use models::*;
 
-pub mod models;
+use std::collections::HashMap;
+use url::Url;
 
-mod process; // Metadata processing implementations
+// ===> Public wrappers
+impl FullVersionMeta {
+  /// Processes this full version metadata into a `ProcessedVersionMeta`.
+  pub fn process(self) -> ProcessedVersionMeta {
+    ProcessedVersionMeta::process(self)
+  }
+
+  /// Merges this full version with a child version and processes the result.
+  pub fn merge_and_process(self, child_meta: ChildVersionMeta) -> ProcessedVersionMeta {
+    let meta = ProcessedVersionMeta::merge(self, child_meta);
+    ProcessedVersionMeta::process(meta)
+  }
+}
+
+impl ChildVersionMeta {
+  /// Merges this child version with a full version and processes the result.
+  pub fn merge_and_process(self, full_meta: FullVersionMeta) -> ProcessedVersionMeta {
+    let meta = ProcessedVersionMeta::merge(full_meta, self);
+    ProcessedVersionMeta::process(meta)
+  }
+}
+
+// ===> Merging and processing
+impl ProcessedVersionMeta {
+  /// Merges a full version with a child version, producing a unified `FullVersionMeta`.
+  fn merge(mut parent: FullVersionMeta, child: ChildVersionMeta) -> FullVersionMeta {
+    parent.libraries.extend(child.libraries);
+    // dedup     meta.deduplicate_libraries();
+
+    let arguments = match (parent.arguments, child.arguments) {
+      (Some(mut a), Some(b)) => {
+        a.game.extend(b.game);
+        a.jvm.extend(b.jvm);
+        Some(a)
+      }
+      (Some(a), None) | (None, Some(a)) => Some(a),
+      (None, None) => None,
+    };
+
+    let minecraft_arguments = match (parent.minecraft_arguments, child.minecraft_arguments) {
+      (Some(p), Some(c)) => Some(format!("{} {}", p, c)),
+      (Some(p), None) => Some(p),
+      (None, Some(c)) => Some(c),
+      (None, None) => None,
+    };
+
+    FullVersionMeta {
+      id: child.id,
+      type_: child.type_,
+      asset_index: parent.asset_index,
+      assets: parent.assets,
+      java_version: parent.java_version,
+      compliance_level: Some(0),
+      downloads: parent.downloads,
+      main_class: child.main_class.unwrap_or(parent.main_class),
+      arguments,
+      minecraft_arguments,
+      libraries: parent.libraries,
+      minimum_launcher_version: parent.minimum_launcher_version,
+      release_time: child.release_time,
+      time: child.time,
+      logging: parent.logging,
+    }
+  }
+
+  /// Processes a `FullVersionMeta` into a `ProcessedVersionMeta`.
+  fn process(meta: FullVersionMeta) -> ProcessedVersionMeta {
+    let libraries = meta
+      .libraries
+      .into_iter()
+      .flat_map(|lib| lib.process_library())
+      .collect::<Vec<ProcessedLibrary>>();
+
+    let arguments = meta.arguments.map(|args| args.process_arguments()).unwrap_or_default();
+
+    ProcessedVersionMeta {
+      id: meta.id,
+      type_: meta.type_,
+      asset_index: meta.asset_index,
+      assets: meta.assets,
+      java_version: meta.java_version,
+      compliance_level: meta.compliance_level,
+      downloads: meta.downloads,
+      main_class: meta.main_class,
+      arguments,
+      libraries,
+      minimum_launcher_version: meta.minimum_launcher_version,
+      release_time: meta.release_time,
+      time: meta.time,
+      logging: meta.logging,
+    }
+  }
+}
+
+//* ==ARGUMENTS & LIBRARIES PROCESSING== *//
+
+//===> RULE PROCESSING
+impl Rule {
+  /// Evaluates the rule and returns `Some(Action::Allow)` or `Some(Action::Disallow)`
+  /// if the rule applies to this system. Returns `None` if the rule is not relevant.
+  fn evaluate(&self) -> Option<Action> {
+    if let Some(os_rule) = &self.os {
+      if let Some(os_name) = &os_rule.name {
+        if os_name.as_str() != std::env::consts::OS {
+          return None;
+        }
+      }
+
+      if let Some(arch) = &os_rule.arch {
+        if arch != std::env::consts::ARCH {
+          return None;
+        }
+      }
+
+      //- If there is not OS or ARCH, the rule applies for all systems.
+    }
+
+    if let Some(_feature_rule) = &self.features {
+      //- Features of the official Minecraft Launcher
+      //- Not supported here
+      return None;
+    }
+
+    Some(self.action.clone())
+  }
+}
+/// Trait for ruled items that needs to be processed (libraries & arguments)
+trait RuledItem {
+  fn get_rules(&self) -> Option<&Vec<Rule>>;
+
+  /// Returns `true` if the item must be skipped, `false` otherwise.
+  fn process_rules(&self) -> bool {
+    let rules = match self.get_rules() {
+      Some(r) => r,
+      None => return false, // No rules = include by default
+    };
+
+    let mut action = Action::Disallow; // Disallow by default
+
+    for rule in rules {
+      match rule.evaluate() {
+        Some(rule_action) => action = rule_action, // Rule is applicable; update the action.
+        None => (),                                // Rule is not applicable on this system; ignore.
+      }
+    }
+
+    !action.to_bool()
+  }
+}
+
+//===> LIBRARY
+impl RuledItem for Library {
+  fn get_rules(&self) -> Option<&Vec<Rule>> {
+    self.rules.as_ref()
+  }
+}
+
+impl Library {
+  /// Processes a library by evaluating its rules and transforming it into one or more
+  /// `ProcessedLibrary` instances ready for download or launch.
+  ///
+  /// - Determines whether the library should be skipped by evaluating its rule set (`must_skip`).
+  /// - Nested native classifiers are converted to a separate `ProcessedLibrary` with the `is_native` flag set.
+  fn process_library(self) -> Vec<ProcessedLibrary> {
+    let must_skip = self.process_rules();
+
+    let mut libs = Vec::new();
+
+    let fallback_path = self.get_path_from_name().unwrap_or_default();
+
+    if let Some(mut downloads) = self.downloads {
+      //= Main artifact
+      if let Some(artifact) = downloads.artifact {
+        let path = artifact.path.clone();
+
+        libs.push(ProcessedLibrary {
+          name: self.name.clone(),
+          path: path.unwrap_or(fallback_path),
+          url: Some(artifact.url),
+          sha1: Some(artifact.sha1),
+          size: Some(artifact.size),
+          must_skip,
+          is_native: self.name.contains("natives-"), //+1.19 natives
+          extract: None,
+        });
+      }
+
+      //= Native classifiers
+      //- Note: pre-1.19 native libraries were included under
+      //- the "classifiers" field within the main library entry.
+      //- +1.19 format doesn't have this field, native libraries are
+      //- defined as separate artifacts with their own library entries
+      //- with "natives-{os}" in the name. (W mojang)
+
+      if !downloads.classifiers.is_empty() {
+        //TODO:
+        let os = std::env::consts::OS;
+        // let arch = std::env::consts::ARCH;
+
+        let expected_keys: Vec<&str> = match os {
+          "macos" => vec!["osx", "macos"],
+          // "windows" => vec!["windows", &format!("windows-{}", &arch)],
+          _ => vec![os],
+        };
+
+        let classifier_keys = expected_keys
+          .iter()
+          .map(|key| format!("natives-{}", key))
+          .collect::<Vec<String>>();
+
+        for key in classifier_keys {
+          if let Some(file) = downloads.classifiers.remove(&key) {
+            let short_key = key.strip_prefix("natives-").unwrap_or(&key);
+            let must_skip = !expected_keys.iter().any(|&k| k == short_key);
+
+            //- Classifier files should always contain a "path" field.
+            //- Using fallback_path here will place the native library
+            //- in the same path as the main artifact, which could cause issues.
+            let lib_path = file.path.unwrap_or_default();
+
+            libs.push(ProcessedLibrary {
+              name: self.name.clone(),
+              url: Some(file.url),
+              path: lib_path,
+              sha1: Some(file.sha1),
+              size: Some(file.size),
+              must_skip,
+              is_native: true,
+              extract: self.extract.clone(),
+            });
+          }
+        }
+      }
+    } else {
+      //- Likely a Fabric-style library without a "downloads" field.
+      //- The full URL must be constructed manually using the "url" field as
+      //- the base repository URL and appending the library's relative path to it.
+      let lib_url = self
+        .url
+        .as_ref()
+        .and_then(|repo_url| Url::parse(repo_url).ok())
+        .and_then(|base| base.join(&fallback_path).ok())
+        .map(|url| url.to_string());
+
+      libs.push(ProcessedLibrary {
+        name: self.name,
+        path: fallback_path,
+        url: lib_url,
+        sha1: self.sha1,
+        size: self.size,
+        must_skip,
+        is_native: false,
+        extract: self.extract,
+      });
+    }
+
+    libs
+  }
+
+  //
+
+  /// Parses the library name into `(group, name, version, classifier, extension)`.
+  fn parse_lib_name(&self) -> crate::Result<(String, String, String, Option<String>, String)> {
+    let parts: Vec<&str> = self.name.split(':').collect();
+
+    if parts.len() < 3 {
+      return Err(crate::Error::Metadata(format!(
+        "Invalid library name format: {}",
+        &self.name
+      )));
+    }
+
+    let (group, name, version, classifier_ext) = match parts.as_slice() {
+      [g, n, v] => (g.to_string(), n.to_string(), v.to_string(), None),
+      [g, n, v, c] => (g.to_string(), n.to_string(), v.to_string(), Some(c.to_string())),
+      _ => {
+        return Err(crate::Error::Metadata(format!(
+          "Invalid library name format: {}",
+          &self.name
+        )));
+      }
+    };
+
+    let (classifier, ext) = if let Some(raw) = classifier_ext {
+      let mut split = raw.split('@');
+      (
+        split.next().map(|s| s.to_string()),
+        split.next().unwrap_or("jar").to_string(),
+      )
+    } else {
+      (None, "jar".to_string())
+    };
+
+    Ok((group, name, version, classifier, ext))
+  }
+
+  /// Gets the library relative path from the artifact name.
+  fn get_path_from_name(&self) -> crate::Result<String> {
+    let (group, name, version, classifier, ext) = self.parse_lib_name()?;
+
+    let path = match classifier {
+      Some(c) => format!(
+        "{}/{}/{}/{}-{}-{}.{}",
+        group.replace('.', "/"),
+        name,
+        version,
+        name,
+        version,
+        c,
+        ext
+      ),
+      None => format!(
+        "{}/{}/{}/{}-{}.{}",
+        group.replace('.', "/"),
+        name,
+        version,
+        name,
+        version,
+        ext
+      ),
+    };
+
+    Ok(path)
+  }
+}
+
+impl FullVersionMeta {
+  #[allow(unused)] //TODO
+  fn deduplicate_libraries(&mut self) {
+    let mut map: HashMap<(String, String, Option<String>), Library> = HashMap::new();
+
+    for lib in std::mem::take(&mut self.libraries) {
+      let (group, name, version, classifier, _) = match lib.parse_lib_name() {
+        Ok(parsed) => parsed,
+        Err(_) => continue,
+      };
+
+      let key = (group, name, classifier);
+
+      match map.get(&key) {
+        Some(existing_lib) => {
+          let (_, _, existing_version, _, _) = existing_lib.parse_lib_name().unwrap();
+          if version > existing_version {
+            map.insert(key, lib);
+          }
+        }
+        None => {
+          map.insert(key, lib);
+        }
+      }
+    }
+
+    self.libraries = map.into_values().collect();
+  }
+}
+
+//==> ARGUMENTS
+impl RuledItem for RuledArgument {
+  fn get_rules(&self) -> Option<&Vec<Rule>> {
+    Some(&self.rules)
+  }
+}
+
+impl Argument {
+  fn process_argument(self) -> Option<ArgumentValue> {
+    match self {
+      Argument::Normal(arg) => Some(arg), // No rules = include by default
+      Argument::Ruled(ruled_arg) => {
+        let must_skip = ruled_arg.process_rules();
+        match must_skip {
+          true => None,                   // Skip argument
+          false => Some(ruled_arg.value), // Include argument
+        }
+      }
+    }
+  }
+}
+
+impl Arguments {
+  fn process_arguments(self) -> ProcessedArguments {
+    let process_args = |args: Vec<Argument>| -> Vec<String> {
+      let mut result = Vec::new();
+      for argument in args {
+        match argument.process_argument() {
+          // Normal or valid ruled argument
+          Some(value) => match value {
+            ArgumentValue::Single(arg) => result.push(arg),   // Add single argument
+            ArgumentValue::Many(args) => result.extend(args), // Add multiple arguments
+          },
+
+          // Invalid ruled argument
+          None => (),
+        }
+      }
+      result
+    };
+
+    ProcessedArguments {
+      game: process_args(self.game),
+      jvm: process_args(self.jvm),
+    }
+  }
+}

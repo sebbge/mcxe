@@ -29,7 +29,8 @@ pub struct RuledArgument {
   pub value: ArgumentValue,
 }
 
-// GAME NORMAL ARGUEMNTS GUIDE //
+//= GAME ARGUMENTS =//
+//= Normal:
 // Single: (/)
 // Many:
 // --accessToken ${auth_access_token}
@@ -44,7 +45,7 @@ pub struct RuledArgument {
 // --versionType ${version_type} See VersionType enum
 // --xuid ${auth_xuid}
 
-// GAME RULED ARGUEMNTS GUIDE //
+//= Ruled:
 // Single:
 // --demo
 // Many:
@@ -55,9 +56,8 @@ pub struct RuledArgument {
 // --quickPlayRealms ${quickPlayRealms}
 // --quickPlaySingleplayer ${quickPlaySingleplayer}
 
-////////////////
-
-// JVM NORMAL ARGUEMNTS GUIDE //
+//= JVM ARGUMENTS =//
+//= Normal:
 // Single: (/)
 // Many:
 // -cp ${classpath}
@@ -68,9 +68,8 @@ pub struct RuledArgument {
 // -Dminecraft.launcher.version=${launcher_version}
 // -Dorg.lwjgl.system.SharedLibraryExtractPath=${natives_directory}
 
-// JVM RULED ARGUEMNTS GUIDE //
-// Single:
-//
+//= Ruled:
+// Single: (/)
 // Many:
 // -Dos.name=Windows 10  //?? win10 only
 // -Dos.version=10.0     //?? win10 only

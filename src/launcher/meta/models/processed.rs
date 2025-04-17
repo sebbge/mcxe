@@ -1,8 +1,4 @@
-use super::{
-  AssetIndexFile, File, LibraryExtract, Logging,
-  vanilla::{ClientDownloads, JavaVersion},
-  version::VersionType,
-};
+use super::{AssetIndexFile, ClientDownloads, JavaVersion, LibraryExtract, Logging, VersionType};
 
 #[derive(Debug)]
 pub struct ProcessedVersionMeta {
@@ -23,8 +19,11 @@ pub struct ProcessedVersionMeta {
 }
 
 // Processed arguments
-#[derive(Debug)]
-pub struct ProcessedArguments {}
+#[derive(Default, Debug)]
+pub struct ProcessedArguments {
+  pub game: Vec<String>,
+  pub jvm: Vec<String>,
+}
 
 /// Processed Library
 #[derive(Debug)]
@@ -36,18 +35,24 @@ pub struct ProcessedLibrary {
   /// Relative path to the file inside the libraries directory.
   pub path: String,
 
+  /// Library URL.
+  ///
+  /// - If `is_native` is `false`, the file is downloaded and added to the classpath.
+  /// - If `true`, this file must be downloaded and extracted
+  ///   to the version's `natives` directory before game launch.
+  pub url: Option<String>,
+
+  /// Library file sha1
+  pub sha1: Option<String>,
+
+  /// Library size in bytes
+  pub size: Option<u64>,
+
   /// Whether the library should be skipped.
   pub must_skip: bool,
 
   /// Indicates whether the library is a native (platform-specific) library.
   pub is_native: bool,
-
-  /// Library file metadata.
-  ///
-  /// - If `is_native` is `false`, the file is downloaded and added to the classpath.
-  /// - If `true`, this file must be downloaded and extracted
-  ///   to the version's `natives` directory before game launch.
-  pub file: Option<File>,
 
   /// Optional extraction rules for native libraries.  
   /// Only relevant when `is_native` is `true`.  

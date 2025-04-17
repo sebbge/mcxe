@@ -1,4 +1,4 @@
-use super::{Arguments, AssetIndexFile, File, Library, Logging, version::VersionType};
+use super::{Arguments, AssetIndexFile, File, Library, Logging, VersionType};
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]

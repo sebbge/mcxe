@@ -1,4 +1,4 @@
-use super::{Arguments, Library, Logging, version::VersionType};
+use super::{Arguments, Library, Logging, VersionType};
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]

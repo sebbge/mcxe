@@ -9,17 +9,25 @@ pub use rule::*;
 
 use serde::Deserialize;
 
-#[derive(Deserialize, Debug, PartialEq)]
+#[derive(Deserialize, Debug, PartialEq, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum Action {
   Allow,
   Disallow,
 }
+impl Action {
+  pub fn to_bool(self) -> bool {
+    match self {
+      Action::Allow => true,
+      Action::Disallow => false,
+    }
+  }
+}
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct File {
   pub sha1: String,
-  pub size: i64,
+  pub size: u64,
   pub url: String,
   pub path: Option<String>,
 }
@@ -29,8 +37,8 @@ pub struct File {
 pub struct AssetIndexFile {
   pub id: String,
   pub sha1: String,
-  pub size: usize,
-  pub total_size: usize,
+  pub size: u64,
+  pub total_size: u64,
   pub url: String,
 }
 

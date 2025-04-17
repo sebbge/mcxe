@@ -13,6 +13,11 @@ pub struct Library {
 
   /// OS guide for classifier keys
   pub natives: Option<LibraryNatives>,
+
+  // fabric-like libraries
+  pub sha1: Option<String>,
+  pub url: Option<String>,
+  pub size: Option<u64>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -27,6 +32,7 @@ pub struct LibraryDownloads {
   // natives-macos
   // natives-windows-32
   // natives-windows-64
+  #[serde(default)]
   pub classifiers: HashMap<String, File>,
 }
 

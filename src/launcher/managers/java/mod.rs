@@ -1,10 +1,7 @@
-use std::{collections::HashMap, path::PathBuf};
+mod models;
+pub use models::*;
 
-pub struct JavaInstallation {
-  name: String,
-  java_version: u16,
-  path_to_executable: PathBuf,
-}
+use std::{collections::HashMap, path::PathBuf};
 
 pub struct JavaManager {
   pub java_dir: PathBuf,

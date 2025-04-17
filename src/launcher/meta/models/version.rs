@@ -1,4 +1,4 @@
-use super::{child::ChildVersionMeta, processed::ProcessedVersionMeta, vanilla::FullVersionMeta};
+use super::{ChildVersionMeta, FullVersionMeta, ProcessedVersionMeta};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize, de::Deserializer};
 use shared::util;

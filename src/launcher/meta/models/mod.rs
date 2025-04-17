@@ -1,6 +1,10 @@
-pub mod child;
+mod child;
+pub use child::*;
 mod shared;
-pub mod vanilla;
-pub mod version;
 pub use shared::*;
-pub mod processed;
+mod processed;
+pub use processed::*;
+mod vanilla;
+pub use vanilla::*;
+mod version;
+pub use version::*;
