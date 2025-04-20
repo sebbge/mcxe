@@ -1,7 +1,16 @@
-use std::path::PathBuf;
+use serde::Deserialize;
 
-pub struct JavaInstallation {
-  name: String,
-  java_version: u16,
-  path_to_executable: PathBuf,
+#[derive(Deserialize)]
+pub(crate) struct ZuluPackage {
+  // arch: String,
+  pub ext: String,
+  // java_version: Vec<u32>,
+  // latest: bool,
+  // md5_hash: String,
+  // name: String,
+  // os: String,
+  // sha256_hash: String,
+  pub size: u64,
+  // support_term: String,
+  pub url: String,
 }

@@ -9,32 +9,29 @@ mod launch;
 pub use launch::*;
 
 use managers::{AssetManager, ClientManager, JavaManager, LibraryManager, VersionManager};
-use std::{
-  path::PathBuf,
-  sync::{Arc, atomic::AtomicBool},
-};
-use tokio::sync::{RwLock, Semaphore, watch};
-use url::Url;
+use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::{RwLock, Semaphore};
 
 pub(crate) type Instance = std::sync::Arc<InnerLauncher>;
 pub(crate) struct InnerLauncher {
-  pub launcher_name: String,
-  pub launcher_version: String,
-  pub root_dir: PathBuf,
+  launcher_name: String,
+  launcher_version: String,
+  root_dir: PathBuf,
   games_dir: PathBuf,
 
   pub version: RwLock<VersionManager>,
-  pub library: LibraryManager,
-  pub client: ClientManager,
-  pub asset: AssetManager,
-  pub java: RwLock<JavaManager>,
+  library: LibraryManager,
+  client: ClientManager,
+  asset: AssetManager,
+  java: JavaManager,
 
   net_s: Arc<Semaphore>,
   io_s: Arc<Semaphore>,
 }
 
 impl InnerLauncher {
-  pub fn new(c: LauncherConfig) -> crate::Result<Self> {
+  pub fn new(c: LauncherConfig) -> Self {
     let games_dir = c.games_dir.unwrap_or_else(|| c.root_dir.join("instances"));
     let libraries_dir = c.libraries_dir.unwrap_or_else(|| c.root_dir.join("libraries"));
     let natives_dir = c.natives_dir.unwrap_or_else(|| c.root_dir.join("natives"));
@@ -42,10 +39,8 @@ impl InnerLauncher {
     let assets_dir = c.assets_dir.unwrap_or_else(|| c.root_dir.join("assets"));
     let java_dir = c.java_dir.unwrap_or_else(|| c.root_dir.join("java"));
 
-    let manifest_url =
-      Url::parse(&c.manifest_url).map_err(|e| crate::Error::Build(format!("Invalid manifest URL: {}", e)))?;
-    let assets_url =
-      Url::parse(&c.assets_url).map_err(|e| crate::Error::Build(format!("Invalid assets URL: {}", e)))?;
+    let manifest_url = url::Url::parse(&c.manifest_url).unwrap_or_else(|e| panic!("Invalid manifest URL: {}", e));
+    let assets_url = url::Url::parse(&c.assets_url).unwrap_or_else(|e| panic!("Invalid manifest URL: {}", e));
 
     let version = RwLock::new(VersionManager::new(
       versions_dir.clone(),
@@ -57,12 +52,12 @@ impl InnerLauncher {
     let library = LibraryManager::new(libraries_dir, natives_dir);
     let client = ClientManager::new(versions_dir);
     let asset = AssetManager::new(assets_dir, assets_url);
-    let java = RwLock::new(JavaManager::new(java_dir));
+    let java = JavaManager::new(java_dir);
 
     let net_s = c.net_s.unwrap_or_else(|| Arc::new(Semaphore::new(10)));
     let io_s = c.io_s.unwrap_or_else(|| Arc::new(Semaphore::new(2)));
 
-    Ok(Self {
+    Self {
       launcher_name: c.name,
       launcher_version: c.version,
       root_dir: c.root_dir,
@@ -76,7 +71,7 @@ impl InnerLauncher {
       //
       net_s,
       io_s,
-    })
+    }
   }
 
   pub async fn init(&self) -> crate::Result<()> {
@@ -87,34 +82,47 @@ impl InnerLauncher {
       &self.library.libraries_dir,
       &self.library.natives_dir,
       &self.asset.assets_dir,
-      &self.java.read().await.java_dir,
+      &self.java.java_dir,
     ];
     for folder_path in tree {
       crate::io::create_dir_all(folder_path).await?;
     }
 
-    self.version.write().await.load_versions().await
+    self.version.write().await.init().await
   }
+
   //
 
   pub async fn download(
     &self,
     instance: Instance,
-    download_id: impl Into<String>,
-    version_id: impl Into<String>,
-  ) -> DownloadHandle {
-    let id: String = download_id.into();
-    let download_state = Download::new(id.clone());
+    download_id: String,
+    version_id: &str,
+  ) -> crate::Result<(Option<DownloadHandle>, DownloadHandle)> {
+    let meta = instance.version.read().await.meta(version_id).await?;
 
-    let (tx, rx) = watch::channel(download_state.read().await.clone());
-    let cancel_flag = Arc::new(AtomicBool::new(false));
+    //= JAVA
+    let java_version = meta.java_version.clone().map(|v| v.major_version).unwrap_or(21);
+    let java_download = if instance.java.get_java(&java_version)?.is_none() {
+      let id = format!("jre-{}:{}", java_version, &download_id);
 
-    let version_id = version_id.into();
-    let state = Arc::clone(&download_state);
-    let cancel = Arc::clone(&cancel_flag);
-    download::download_game(instance, version_id, state, tx, cancel);
+      let (download, handle) = Download::new(id).await;
 
-    DownloadHandle::new(id, rx, cancel_flag)
+      let instance_ = Arc::clone(&instance);
+      download::download_java(instance_, java_version, download);
+
+      Some(handle)
+    } else {
+      None
+    };
+
+    //= GAME
+    let (download, handle) = Download::new(download_id).await;
+
+    download::download_game(instance, meta, download);
+    //
+
+    Ok((java_download, handle))
   }
 
   pub async fn launch(&self, instance: Instance, config: LaunchConfig) -> crate::Result<LaunchHandle> {

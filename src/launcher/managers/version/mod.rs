@@ -33,7 +33,7 @@ impl VersionManager {
     }
   }
 
-  pub async fn load_versions(&mut self) -> crate::Result<()> {
+  pub async fn init(&mut self) -> crate::Result<()> {
     let mut manifest = self.manifest.get().await?;
     let mut external_versions = IndexMap::new();
 

@@ -1,8 +1,6 @@
-use typed_builder::TypedBuilder;
-
 use std::path::PathBuf;
 
-#[derive(TypedBuilder)]
+#[derive(typed_builder::TypedBuilder)]
 pub struct LaunchConfig {
   #[builder(setter(into))]
   pub(super) id: String,
@@ -23,10 +21,11 @@ pub struct LaunchConfig {
   #[builder(default, setter(strip_option))]
   pub(super) extra_game_args: Option<Vec<String>>,
   #[builder(default)]
+  #[allow(dead_code)] // TODO: use check_assets field
   pub(super) check_assets: Option<bool>,
 }
 
 pub struct LaunchHandle {
   pub id: String,
-  pub child: std::process::Child,
+  pub child: std::process::Child, // TODO: set to tokio process
 }

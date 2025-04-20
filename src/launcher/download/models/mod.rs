@@ -2,13 +2,19 @@ use serde::Serialize;
 use std::sync::{Arc, atomic};
 use std::time::Instant;
 use time::OffsetDateTime;
-use tokio::sync::{
-  RwLock,
-  watch::{Receiver, Sender},
-};
+use tokio::sync::RwLock;
+use tokio::sync::watch::{Receiver, Sender};
 
-pub(super) type DownloadState = Arc<RwLock<Download>>;
+//- Download tasks
+pub(super) enum TaskResult {
+  Cancelled,
+  Impossible,
+  Ignored,
+  Success,
+}
+pub(super) type Task<T> = tokio::task::JoinHandle<(T, crate::Result<TaskResult>)>;
 
+//- Public download state
 #[derive(Serialize, Default, Clone)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum DownloadStatus {
@@ -22,7 +28,7 @@ pub enum DownloadStatus {
 }
 
 #[derive(Clone)]
-pub struct Download {
+pub struct DownloadState {
   pub id: String,
   pub status: DownloadStatus,
   pub message: String,
@@ -33,10 +39,10 @@ pub struct Download {
   pub finish: Option<OffsetDateTime>,
   pub started_at: Option<Instant>,
 }
-impl Download {
-  pub fn new(id: impl Into<String>) -> DownloadState {
-    Arc::new(RwLock::new(Self {
-      id: id.into(),
+impl DownloadState {
+  fn new(id: String) -> Self {
+    Self {
+      id,
       status: DownloadStatus::default(),
       message: String::new(),
       total_bytes: 0,
@@ -45,10 +51,10 @@ impl Download {
       start: None,
       finish: None,
       started_at: None,
-    }))
+    }
   }
 
-  pub fn start(&mut self, tx: &Sender<Download>) {
+  fn start(&mut self, tx: &Sender<Self>) {
     self.status = DownloadStatus::InProgress;
     self.start = Some(OffsetDateTime::now_utc());
     self.started_at = Some(Instant::now());
@@ -56,19 +62,19 @@ impl Download {
     self.send_update(tx);
   }
 
-  pub fn set_total(&mut self, total: u64, tx: &Sender<Download>) {
+  fn set_total(&mut self, tx: &Sender<Self>, total: u64) {
     self.total_bytes = total;
 
     self.send_update(tx);
   }
 
-  pub fn set_message(&mut self, message: impl Into<String>, tx: &Sender<Download>) {
+  fn set_message(&mut self, tx: &Sender<Self>, message: impl Into<String>) {
     self.message = message.into();
 
     self.send_update(tx);
   }
 
-  pub fn add_bytes(&mut self, bytes: usize, message: impl Into<String>, tx: &Sender<Download>) {
+  fn add_bytes(&mut self, tx: &Sender<Self>, bytes: usize, message: impl Into<String>) {
     self.downloaded_bytes = self.downloaded_bytes.saturating_add(bytes as u64).min(self.total_bytes);
     self.message = message.into();
 
@@ -83,13 +89,14 @@ impl Download {
     self.send_update(tx);
   }
 
-  pub fn set_installing(&mut self, tx: &Sender<Download>) {
+  fn set_installing(&mut self, tx: &Sender<Self>, message: impl Into<String>) {
     self.status = DownloadStatus::Installing;
+    self.message = message.into();
 
     self.send_update(tx);
   }
 
-  pub fn fail(&mut self, message: impl Into<String>, tx: &Sender<Download>) {
+  fn fail(&mut self, tx: &Sender<Self>, message: impl Into<String>) {
     self.status = DownloadStatus::Failed;
     self.finish = Some(OffsetDateTime::now_utc());
     self.message = message.into();
@@ -97,7 +104,7 @@ impl Download {
     self.send_update(tx);
   }
 
-  pub fn finish(&mut self, message: impl Into<String>, tx: &Sender<Download>) {
+  fn finish(&mut self, tx: &Sender<Self>, message: impl Into<String>) {
     self.status = DownloadStatus::Completed;
     self.finish = Some(OffsetDateTime::now_utc());
     self.message = message.into();
@@ -105,7 +112,7 @@ impl Download {
     self.send_update(tx);
   }
 
-  pub fn cancel(&mut self, message: impl Into<String>, tx: &Sender<Download>) {
+  fn cancel(&mut self, tx: &Sender<Self>, message: impl Into<String>) {
     self.status = DownloadStatus::Cancelled;
     self.finish = Some(OffsetDateTime::now_utc());
     self.message = message.into();
@@ -113,21 +120,99 @@ impl Download {
     self.send_update(tx);
   }
 
-  fn send_update(&self, tx: &Sender<Download>) {
+  fn send_update(&self, tx: &Sender<Self>) {
     let _ = tx.send(self.clone());
   }
 }
 
+//- Public download handle
 pub struct DownloadHandle {
   pub id: String,
-  pub rx: Receiver<Download>,
-  cancel_flag: Arc<atomic::AtomicBool>,
+  pub rx: Receiver<DownloadState>,
+  cancel: CancelFlag,
 }
 impl DownloadHandle {
-  pub(crate) fn new(id: String, rx: Receiver<Download>, cancel_flag: Arc<atomic::AtomicBool>) -> Self {
-    Self { id, rx, cancel_flag }
-  }
   pub fn cancel(&self) {
-    self.cancel_flag.store(true, atomic::Ordering::Relaxed);
+    self.cancel.cancel();
+  }
+}
+
+//- Private download manager
+struct InnerDownload {
+  state: Arc<RwLock<DownloadState>>,
+  tx: Sender<DownloadState>,
+  cancel: CancelFlag,
+}
+
+#[derive(Clone)]
+pub(crate) struct Download(Arc<InnerDownload>);
+impl Download {
+  pub async fn new(id: impl Into<String>) -> (Self, DownloadHandle) {
+    let id = id.into();
+
+    let download = DownloadState::new(id.clone());
+    let state = Arc::new(RwLock::new(download));
+    let (tx, rx) = tokio::sync::watch::channel(state.read().await.clone());
+
+    let cancel = CancelFlag::default();
+    let handle = DownloadHandle {
+      id,
+      rx,
+      cancel: cancel.clone(),
+    };
+
+    (Self(Arc::new(InnerDownload { state, tx, cancel })), handle)
+  }
+
+  pub async fn start(&self) {
+    self.0.state.write().await.start(&self.0.tx);
+  }
+
+  pub async fn set_total(&self, total: u64) {
+    self.0.state.write().await.set_total(&self.0.tx, total);
+  }
+
+  pub async fn set_message(&self, message: impl Into<String>) {
+    self.0.state.write().await.set_message(&self.0.tx, message);
+  }
+
+  pub async fn add_bytes(&self, bytes: usize, message: impl Into<String>) {
+    self.0.state.write().await.add_bytes(&self.0.tx, bytes, message);
+  }
+
+  pub async fn set_installing(&self, message: impl Into<String>) {
+    self.0.state.write().await.set_installing(&self.0.tx, message);
+  }
+
+  pub async fn fail(&self, message: impl Into<String>) {
+    self.0.state.write().await.fail(&self.0.tx, message);
+  }
+
+  pub async fn finish(&self, message: impl Into<String>) {
+    self.0.state.write().await.finish(&self.0.tx, message);
+  }
+
+  //
+
+  pub async fn cancel(&self, message: impl Into<String>) {
+    self.0.cancel.cancel();
+    self.0.state.write().await.cancel(&self.0.tx, message);
+  }
+
+  pub fn is_cancelled(&self) -> bool {
+    self.0.cancel.is_cancelled()
+  }
+}
+
+//- Download cancel flag
+#[derive(Default, Clone)]
+struct CancelFlag(Arc<atomic::AtomicBool>);
+impl CancelFlag {
+  fn cancel(&self) {
+    self.0.store(true, atomic::Ordering::Relaxed);
+  }
+
+  fn is_cancelled(&self) -> bool {
+    self.0.load(atomic::Ordering::Relaxed)
   }
 }

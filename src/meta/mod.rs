@@ -1,3 +1,5 @@
+#![allow(dead_code)] // TODO: use unusued meta fileds
+
 mod models;
 pub use models::*;
 
@@ -317,7 +319,7 @@ impl Library {
 }
 
 impl FullVersionMeta {
-  #[allow(unused)] //TODO
+  #[allow(unused)] // TODO: deduplicate libraries
   fn deduplicate_libraries(&mut self) {
     let mut map: HashMap<(String, String, Option<String>), Library> = HashMap::new();
 

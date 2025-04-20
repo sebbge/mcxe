@@ -1,7 +1,5 @@
 use crate::meta::ProcessedLibrary;
-use std::path::PathBuf;
-
-use std::io::Read;
+use std::{io::Read, path::PathBuf};
 
 pub struct LibraryManager {
   pub libraries_dir: PathBuf,
@@ -46,7 +44,7 @@ impl LibraryManager {
     let natives_dir = self.get_version_natives_dir(version_id);
     let path = self.get_lib_path(native);
 
-    crate::io::zip::for_each(&path, |mut file: zip::read::ZipFile<std::io::Cursor<Vec<u8>>>| {
+    crate::io::zip::for_each(&path, |mut file: crate::io::zip::ZipFile| {
       let name = file.name();
 
       if name.starts_with("META-INF/") || name.ends_with('/') {
