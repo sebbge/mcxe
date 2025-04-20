@@ -3,7 +3,7 @@ use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct ChildVersionMeta {
+pub struct PartialVersionMeta {
   pub id: String,
   pub inherits_from: String,
   #[serde(rename = "type")]

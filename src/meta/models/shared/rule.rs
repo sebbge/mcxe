@@ -33,7 +33,6 @@ impl RuleOsName {
   }
 }
 
-// features
 #[derive(Deserialize, Debug)]
 pub struct Features {
   pub is_demo_user: Option<bool>,

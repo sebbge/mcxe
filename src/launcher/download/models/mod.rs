@@ -1,7 +1,13 @@
 use serde::Serialize;
+use std::sync::{Arc, atomic};
 use std::time::Instant;
 use time::OffsetDateTime;
-use tokio::sync::watch::Sender;
+use tokio::sync::{
+  RwLock,
+  watch::{Receiver, Sender},
+};
+
+pub(super) type DownloadState = Arc<RwLock<Download>>;
 
 #[derive(Serialize, Default, Clone)]
 #[serde(rename_all = "UPPERCASE")]
@@ -28,8 +34,8 @@ pub struct Download {
   pub started_at: Option<Instant>,
 }
 impl Download {
-  pub fn new(id: impl Into<String>) -> Self {
-    Self {
+  pub fn new(id: impl Into<String>) -> DownloadState {
+    Arc::new(RwLock::new(Self {
       id: id.into(),
       status: DownloadStatus::default(),
       message: String::new(),
@@ -39,7 +45,7 @@ impl Download {
       start: None,
       finish: None,
       started_at: None,
-    }
+    }))
   }
 
   pub fn start(&mut self, tx: &Sender<Download>) {
@@ -62,8 +68,9 @@ impl Download {
     self.send_update(tx);
   }
 
-  pub fn add_bytes(&mut self, bytes: u64, tx: &Sender<Download>) {
-    self.downloaded_bytes = self.downloaded_bytes.saturating_add(bytes).min(self.total_bytes);
+  pub fn add_bytes(&mut self, bytes: usize, message: impl Into<String>, tx: &Sender<Download>) {
+    self.downloaded_bytes = self.downloaded_bytes.saturating_add(bytes as u64).min(self.total_bytes);
+    self.message = message.into();
 
     self.progress = if self.total_bytes == 0 {
       0.0
@@ -98,7 +105,29 @@ impl Download {
     self.send_update(tx);
   }
 
+  pub fn cancel(&mut self, message: impl Into<String>, tx: &Sender<Download>) {
+    self.status = DownloadStatus::Cancelled;
+    self.finish = Some(OffsetDateTime::now_utc());
+    self.message = message.into();
+
+    self.send_update(tx);
+  }
+
   fn send_update(&self, tx: &Sender<Download>) {
     let _ = tx.send(self.clone());
+  }
+}
+
+pub struct DownloadHandle {
+  pub id: String,
+  pub rx: Receiver<Download>,
+  cancel_flag: Arc<atomic::AtomicBool>,
+}
+impl DownloadHandle {
+  pub(crate) fn new(id: String, rx: Receiver<Download>, cancel_flag: Arc<atomic::AtomicBool>) -> Self {
+    Self { id, rx, cancel_flag }
+  }
+  pub fn cancel(&self) {
+    self.cancel_flag.store(true, atomic::Ordering::Relaxed);
   }
 }

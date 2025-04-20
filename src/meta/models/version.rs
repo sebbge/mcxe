@@ -1,4 +1,4 @@
-use super::{ChildVersionMeta, FullVersionMeta, ProcessedVersionMeta};
+use super::{FullVersionMeta, PartialVersionMeta};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize, de::Deserializer};
 use shared::util;
@@ -46,21 +46,21 @@ pub struct ManifestVersion {
 }
 
 //====VERSION METADATA====//
+#[derive(Serialize, Debug)]
+pub struct Version {
+  pub id: String,
+  pub name: String,
+  pub inherits_from: Option<String>,
+  #[serde(rename = "type")]
+  pub type_: VersionType,
 
-#[derive(Debug)]
-pub enum VersionMeta {
-  /// Full version metadata
-  /// Refers to a vanilla version meta with no dependencies.
-  Full(Box<FullVersionMeta>),
+  #[serde(skip_serializing)]
+  pub url: Option<String>,
 
-  /// Partial/Child version metadata
-  /// Refers to an external version meta that depends on a full vanilla meta.
-  /// Should be merged/processed with a full meta to be used.
-  Partial(Box<ChildVersionMeta>),
-  // Processed version metadata (ready for launch/download)
-  // Obtained by processing a full metadata or merging partial meta with a full one.
-  // All arguments and libraries are processed according to their rules.
-  // Processed(Box<ProcessedVersionMeta>),
+  pub is_external: bool,
+  pub status: VersionStatus,
+  // #[serde(skip)]
+  // pub meta: Option<ProcessedVersionMeta>,
 }
 
 #[derive(Serialize, Default, Debug)]
@@ -71,7 +71,7 @@ pub enum VersionStatus {
   Ready,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum VersionType {
   OldAlpha,
@@ -80,42 +80,24 @@ pub enum VersionType {
   Snapshot,
 }
 
-#[derive(Serialize, Debug)]
-pub struct Version {
-  pub id: String,
-  pub name: String,
-  #[serde(rename = "type")]
-  pub type_: VersionType,
-
-  #[serde(skip_serializing)]
-  pub url: Option<String>,
-
-  pub is_external: bool,
-  pub status: VersionStatus,
-
-  #[serde(skip)]
-  /// Version meta cache
-  pub meta: Option<ProcessedVersionMeta>,
-}
-
 impl From<ManifestVersion> for Version {
   /// Convert vanilla versions to [`Version`]
   fn from(v: ManifestVersion) -> Self {
     Self {
       name: format!("Minecraft {}", &v.id),
+      inherits_from: None,
       id: v.id,
       type_: v.type_,
       url: Some(v.url),
       is_external: false,
       status: VersionStatus::Unchecked,
-      meta: None,
     }
   }
 }
 
-impl From<ChildVersionMeta> for Version {
+impl From<PartialVersionMeta> for Version {
   /// Convert **external**  versions with **partial** metadata to [`Version`]
-  fn from(v: ChildVersionMeta) -> Self {
+  fn from(v: PartialVersionMeta) -> Self {
     let name = v
       .id
       .split('-')
@@ -125,12 +107,12 @@ impl From<ChildVersionMeta> for Version {
 
     Self {
       name: util::format::capitalize(&name),
+      inherits_from: Some(v.inherits_from),
       id: v.id,
       type_: v.type_,
       url: None,
       is_external: true,
       status: VersionStatus::Unchecked,
-      meta: None,
     }
   }
 }
@@ -141,21 +123,12 @@ impl From<FullVersionMeta> for Version {
   fn from(v: FullVersionMeta) -> Self {
     Self {
       name: v.id.clone(),
+      inherits_from: None,
       id: v.id,
       type_: v.type_,
       url: None,
       is_external: true,
       status: VersionStatus::Unchecked,
-      meta: None,
-    }
-  }
-}
-
-impl From<VersionMeta> for Version {
-  fn from(v: VersionMeta) -> Self {
-    match v {
-      VersionMeta::Full(v) => Version::from(*v),
-      VersionMeta::Partial(v) => Version::from(*v),
     }
   }
 }

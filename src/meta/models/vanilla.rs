@@ -22,7 +22,7 @@ pub struct FullVersionMeta {
   pub logging: Option<Logging>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct JavaVersion {
   // Can be:
@@ -38,7 +38,7 @@ pub struct JavaVersion {
   pub major_version: u16,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct ClientDownloads {
   pub client: File,
   pub server: Option<File>,

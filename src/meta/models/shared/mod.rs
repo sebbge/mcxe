@@ -16,7 +16,7 @@ pub enum Action {
   Disallow,
 }
 impl Action {
-  pub fn to_bool(self) -> bool {
+  pub fn into_bool(self) -> bool {
     match self {
       Action::Allow => true,
       Action::Disallow => false,
@@ -32,7 +32,7 @@ pub struct File {
   pub path: Option<String>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AssetIndexFile {
   pub id: String,
@@ -42,11 +42,11 @@ pub struct AssetIndexFile {
   pub url: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Logging {
   pub client: LoggingClient,
 }
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct LoggingClient {
   pub argument: String, // logging argument, always "-Dlog4j.configurationFile=${path}"
   pub file: File,

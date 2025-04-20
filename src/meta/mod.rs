@@ -12,16 +12,8 @@ impl FullVersionMeta {
   }
 
   /// Merges this full version with a child version and processes the result.
-  pub fn merge_and_process(self, child_meta: ChildVersionMeta) -> ProcessedVersionMeta {
+  pub fn merge_and_process(self, child_meta: PartialVersionMeta) -> ProcessedVersionMeta {
     let meta = ProcessedVersionMeta::merge(self, child_meta);
-    ProcessedVersionMeta::process(meta)
-  }
-}
-
-impl ChildVersionMeta {
-  /// Merges this child version with a full version and processes the result.
-  pub fn merge_and_process(self, full_meta: FullVersionMeta) -> ProcessedVersionMeta {
-    let meta = ProcessedVersionMeta::merge(full_meta, self);
     ProcessedVersionMeta::process(meta)
   }
 }
@@ -29,7 +21,7 @@ impl ChildVersionMeta {
 // ===> Merging and processing
 impl ProcessedVersionMeta {
   /// Merges a full version with a child version, producing a unified `FullVersionMeta`.
-  fn merge(mut parent: FullVersionMeta, child: ChildVersionMeta) -> FullVersionMeta {
+  fn merge(mut parent: FullVersionMeta, child: PartialVersionMeta) -> FullVersionMeta {
     parent.libraries.extend(child.libraries);
     // dedup     meta.deduplicate_libraries();
 
@@ -77,7 +69,12 @@ impl ProcessedVersionMeta {
       .flat_map(|lib| lib.process_library())
       .collect::<Vec<ProcessedLibrary>>();
 
-    let arguments = meta.arguments.map(|args| args.process_arguments()).unwrap_or_default();
+    let mut arguments = meta.arguments.map(|args| args.process_arguments()).unwrap_or_default();
+
+    if let Some(minecraft_args) = meta.minecraft_arguments {
+      let legacy_args = minecraft_args.split_whitespace().map(String::from);
+      arguments.game.extend(legacy_args);
+    }
 
     ProcessedVersionMeta {
       id: meta.id,
@@ -150,7 +147,7 @@ trait RuledItem {
       }
     }
 
-    !action.to_bool()
+    !action.into_bool()
   }
 }
 
@@ -174,10 +171,11 @@ impl Library {
 
     let fallback_path = self.get_path_from_name().unwrap_or_default();
 
-    if let Some(mut downloads) = self.downloads {
+    if let Some(downloads) = self.downloads {
       //= Main artifact
       if let Some(artifact) = downloads.artifact {
         let path = artifact.path.clone();
+        let is_native = self.name.contains("natives"); //- +1.19 natives
 
         libs.push(ProcessedLibrary {
           name: self.name.clone(),
@@ -185,9 +183,12 @@ impl Library {
           url: Some(artifact.url),
           sha1: Some(artifact.sha1),
           size: Some(artifact.size),
-          must_skip,
-          is_native: self.name.contains("natives-"), //+1.19 natives
-          extract: None,
+          must_skip: if is_native && !must_skip {
+            Library::must_skip_native(&self.name)
+          } else {
+            must_skip
+          },
+          is_native,
         });
       }
 
@@ -197,44 +198,24 @@ impl Library {
       //- +1.19 format doesn't have this field, native libraries are
       //- defined as separate artifacts with their own library entries
       //- with "natives-{os}" in the name. (W mojang)
-
       if !downloads.classifiers.is_empty() {
-        //TODO:
-        let os = std::env::consts::OS;
-        // let arch = std::env::consts::ARCH;
+        for (key, lib) in downloads.classifiers.into_iter() {
+          let must_skip = Library::must_skip_native(&key);
 
-        let expected_keys: Vec<&str> = match os {
-          "macos" => vec!["osx", "macos"],
-          // "windows" => vec!["windows", &format!("windows-{}", &arch)],
-          _ => vec![os],
-        };
+          //- Classifier files should always contain a "path" field.
+          //- Using fallback_path here will place the native library
+          //- in the same path as the main artifact, which will cause issues.
+          let lib_path = lib.path.unwrap_or_default();
 
-        let classifier_keys = expected_keys
-          .iter()
-          .map(|key| format!("natives-{}", key))
-          .collect::<Vec<String>>();
-
-        for key in classifier_keys {
-          if let Some(file) = downloads.classifiers.remove(&key) {
-            let short_key = key.strip_prefix("natives-").unwrap_or(&key);
-            let must_skip = !expected_keys.iter().any(|&k| k == short_key);
-
-            //- Classifier files should always contain a "path" field.
-            //- Using fallback_path here will place the native library
-            //- in the same path as the main artifact, which could cause issues.
-            let lib_path = file.path.unwrap_or_default();
-
-            libs.push(ProcessedLibrary {
-              name: self.name.clone(),
-              url: Some(file.url),
-              path: lib_path,
-              sha1: Some(file.sha1),
-              size: Some(file.size),
-              must_skip,
-              is_native: true,
-              extract: self.extract.clone(),
-            });
-          }
+          libs.push(ProcessedLibrary {
+            name: self.name.clone(),
+            url: Some(lib.url),
+            path: lib_path,
+            sha1: Some(lib.sha1),
+            size: Some(lib.size),
+            must_skip,
+            is_native: true,
+          });
         }
       }
     } else {
@@ -256,7 +237,6 @@ impl Library {
         size: self.size,
         must_skip,
         is_native: false,
-        extract: self.extract,
       });
     }
 
@@ -327,6 +307,12 @@ impl Library {
     };
 
     Ok(path)
+  }
+
+  /// Determines whether a native library should be skipped based on this system.
+  fn must_skip_native(native_lib_name: &str) -> bool {
+    let classifiers = crate::platform::native_classifier();
+    !classifiers.iter().any(|suffix| native_lib_name.ends_with(suffix))
   }
 }
 
