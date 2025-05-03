@@ -15,12 +15,12 @@ pub(super) enum TaskResult {
 pub(super) type Task<T> = tokio::task::JoinHandle<(T, crate::Result<TaskResult>)>;
 
 //- Public download state
-#[derive(Serialize, Default, Clone)]
+#[derive(Serialize, Default, Clone, PartialEq)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum DownloadStatus {
   #[default]
   Processing,
-  InProgress,
+  Downloading,
   Installing,
   Completed,
   Failed,
@@ -55,7 +55,7 @@ impl DownloadState {
   }
 
   fn start(&mut self, tx: &Sender<Self>) {
-    self.status = DownloadStatus::InProgress;
+    self.status = DownloadStatus::Downloading;
     self.start = Some(OffsetDateTime::now_utc());
     self.started_at = Some(Instant::now());
 
@@ -75,6 +75,8 @@ impl DownloadState {
   }
 
   fn add_bytes(&mut self, tx: &Sender<Self>, bytes: usize, message: impl Into<String>) {
+    let prev = self.progress.floor();
+
     self.downloaded_bytes = self.downloaded_bytes.saturating_add(bytes as u64).min(self.total_bytes);
     self.message = message.into();
 
@@ -86,7 +88,9 @@ impl DownloadState {
 
     self.progress = self.progress.min(100.0);
 
-    self.send_update(tx);
+    if prev < self.progress.floor() {
+      self.send_update(tx);
+    }
   }
 
   fn set_installing(&mut self, tx: &Sender<Self>, message: impl Into<String>) {
@@ -106,6 +110,7 @@ impl DownloadState {
 
   fn finish(&mut self, tx: &Sender<Self>, message: impl Into<String>) {
     self.status = DownloadStatus::Completed;
+    self.progress = 100.0;
     self.finish = Some(OffsetDateTime::now_utc());
     self.message = message.into();
 
@@ -161,7 +166,9 @@ impl Download {
       cancel: cancel.clone(),
     };
 
-    (Self(Arc::new(InnerDownload { state, tx, cancel })), handle)
+    let download = Arc::new(InnerDownload { state, tx, cancel });
+    download.state.write().await.send_update(&download.tx);
+    (Self(download), handle)
   }
 
   pub async fn start(&self) {

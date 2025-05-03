@@ -58,7 +58,7 @@ impl LibraryManager {
       let mut bytes = Vec::with_capacity(file.size() as usize);
       file
         .read_to_end(&mut bytes)
-        .map_err(|e| crate::io::IOError::from_io(e, &path))?;
+        .map_err(|e| crate::io::IoError::from_io(e, &path))?;
 
       crate::io::write_sync(&native_path, &bytes)?;
 

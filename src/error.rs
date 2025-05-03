@@ -1,11 +1,13 @@
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-  #[error("Build error: {0}")]
-  Build(String),
+  // shared
+  #[error("{0}")]
+  Net(#[from] crate::net::NetError),
 
   #[error("{0}")]
-  Common(#[from] shared::Error),
+  Io(#[from] crate::io::IoError),
 
+  // launcher (this)
   #[error("Parse error: {0}")]
   Parse(#[from] serde_json::Error),
 
@@ -17,7 +19,13 @@ pub enum Error {
 
   #[error("Download error: {0}")]
   Download(String),
+}
 
-  #[error("Join Error: {0}")]
-  Join(#[from] tokio::task::JoinError),
+impl From<shared::Error> for Error {
+  fn from(e: shared::Error) -> Self {
+    match e {
+      shared::Error::Net(e) => Self::Net(e),
+      shared::Error::Io(e) => Self::Io(e),
+    }
+  }
 }

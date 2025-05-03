@@ -10,6 +10,8 @@ mod launcher;
 mod meta;
 pub use launcher::*;
 
+pub use meta::{LatestVersions, Version, VersionStatus, VersionType};
+
 #[derive(Clone)]
 pub struct Launcher(Instance);
 impl Launcher {
@@ -21,8 +23,16 @@ impl Launcher {
     self.0.init().await
   }
 
-  pub async fn refresh_versions(&self) -> Result<()> {
+  pub async fn reload_versions(&self) -> Result<()> {
     self.0.version.write().await.init().await
+  }
+
+  pub async fn versions(&self) -> Vec<meta::Version> {
+    self.0.version.read().await.versions()
+  }
+
+  pub async fn latest_versions(&self) -> LatestVersions {
+    self.0.version.read().await.latest_versions().await
   }
   //
 

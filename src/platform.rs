@@ -44,3 +44,9 @@ pub fn native_classifier() -> &'static Vec<String> {
 pub fn classpath_separator() -> &'static str {
   CLASSPATH_SEPARATOR.get_or_init(|| if OS == "windows" { ";" } else { ":" })
 }
+
+pub fn tmp_dir() -> String {
+  let tmp_dir = std::env::temp_dir();
+  crate::io::create_dir_all_sync(&tmp_dir).ok();
+  tmp_dir.to_string_lossy().to_string()
+}

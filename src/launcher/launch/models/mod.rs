@@ -27,5 +27,5 @@ pub struct LaunchConfig {
 
 pub struct LaunchHandle {
   pub id: String,
-  pub child: std::process::Child, // TODO: set to tokio process
+  pub child: tokio::process::Child,
 }

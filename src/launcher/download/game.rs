@@ -3,7 +3,7 @@ use crate::Instance;
 use crate::meta::{Asset, AssetIndex, File, ProcessedLibrary, ProcessedVersionMeta};
 use futures::future;
 
-pub fn download_game(instance: Instance, meta: ProcessedVersionMeta, download: Download) {
+pub fn download_game(instance: Instance, download: Download, meta: ProcessedVersionMeta) {
   tokio::spawn(async move {
     let download_result: crate::Result<Option<()>> = async {
       //- Meta
@@ -19,8 +19,10 @@ pub fn download_game(instance: Instance, meta: ProcessedVersionMeta, download: D
       download.start().await;
 
       //- Libraries download
-      let (lib_tasks, _skipped_libs) = build_lib_tasks(libraries, &instance, &download);
-      let lib_results = future::try_join_all(lib_tasks).await?;
+      let (lib_tasks, _skipped_libs) = build_lib_tasks(&instance, &download, libraries);
+      let lib_results = future::try_join_all(lib_tasks)
+        .await
+        .map_err(|e| crate::Error::Download(e.to_string()))?;
 
       let mut existing_libs = Vec::new();
       let mut new_libs = Vec::new();
@@ -48,8 +50,10 @@ pub fn download_game(instance: Instance, meta: ProcessedVersionMeta, download: D
       }
 
       //- Assets download
-      let asset_tasks = build_asset_tasks(asset_index, &instance, &download);
-      let asset_results = future::try_join_all(asset_tasks).await?;
+      let asset_tasks = build_asset_tasks(&instance, &download, asset_index);
+      let asset_results = future::try_join_all(asset_tasks)
+        .await
+        .map_err(|e| crate::Error::Download(e.to_string()))?;
 
       let mut new_assets = Vec::new();
       let mut existing_assets = Vec::new();
@@ -69,8 +73,8 @@ pub fn download_game(instance: Instance, meta: ProcessedVersionMeta, download: D
       }
 
       //- Client download
-      let client_task = build_client_task(client, &meta.id, &instance, &download);
-      let (_client, result) = client_task.await?;
+      let client_task = build_client_task(&instance, &download, client, &meta.id);
+      let (_client, result) = client_task.await.map_err(|e| crate::Error::Download(e.to_string()))?;
       match result {
         Ok(TaskResult::Cancelled) => return Ok(None),
         Ok(TaskResult::Success) => (),
@@ -92,14 +96,14 @@ pub fn download_game(instance: Instance, meta: ProcessedVersionMeta, download: D
       Ok(None) => download.cancel("").await,
       Ok(Some(())) => download.finish("").await,
       Err(e) => download.fail(e.to_string()).await,
-    }
+    };
   });
 }
 
 fn build_lib_tasks(
-  libraries: Vec<ProcessedLibrary>,
   instance: &Instance,
   download: &Download,
+  libraries: Vec<ProcessedLibrary>,
 ) -> (Vec<Task<ProcessedLibrary>>, Vec<ProcessedLibrary>) {
   let mut skipped = Vec::new();
   let mut tasks = Vec::new();
@@ -155,7 +159,7 @@ fn build_lib_tasks(
   (tasks, skipped)
 }
 
-fn build_asset_tasks(index: AssetIndex, instance: &Instance, download: &Download) -> Vec<Task<Asset>> {
+fn build_asset_tasks(instance: &Instance, download: &Download, index: AssetIndex) -> Vec<Task<Asset>> {
   let mut tasks = Vec::new();
 
   for asset in index.objects {
@@ -195,7 +199,7 @@ fn build_asset_tasks(index: AssetIndex, instance: &Instance, download: &Download
   tasks
 }
 
-fn build_client_task(client: File, v_id: &str, instance: &Instance, download: &Download) -> Task<File> {
+fn build_client_task(instance: &Instance, download: &Download, client: File, v_id: &str) -> Task<File> {
   let v_id = v_id.to_string();
   let instance = instance.clone();
   let download = download.clone();

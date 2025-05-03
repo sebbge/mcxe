@@ -5,10 +5,8 @@ use crate::{
   Instance,
   meta::{ProcessedLibrary, ProcessedVersionMeta},
 };
-use std::collections::HashMap;
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
-use std::process::{Command, Stdio};
+use std::{collections::HashMap, process::Stdio};
+use tokio::process::Command;
 
 pub(super) async fn launch_game(instance: Instance, config: LaunchConfig) -> crate::Result<LaunchHandle> {
   let meta = instance.version.read().await.meta(&config.version).await?;
@@ -18,23 +16,22 @@ pub(super) async fn launch_game(instance: Instance, config: LaunchConfig) -> cra
     instance.library.extract_native(&meta.id, native).await?;
   }
 
-  // meta.checksum()
-
   let java_path = if let Some(custom) = &config.custom_java {
     custom.clone()
   } else {
-    // check java existence
-    std::path::PathBuf::new()
+    let (path, _) = instance.java.get_java(&meta.java_version)?;
+    path.ok_or_else(|| crate::Error::Launcher("Java is unavailable".into()))?
   };
 
+  // meta.checksum()
+
   if config.token.is_some() {
-    // info!("LAUNCH", "Session found. Minecraft will run in online mode");
+    tracing::info!("Session found. Minecraft will run in online mode");
   } else {
-    // info!("LAUNCH", "NO SESSION FOUND. Minecraft will run in OFFLINE MODE!");
+    tracing::info!("NO SESSION FOUND. Minecraft will run in offline mode!");
   }
 
-  let (classpath, skipped_libs) = build_classpath(&instance, &meta);
-  println!("Skipped {} libraries.", skipped_libs.len());
+  let (classpath, _) = build_classpath(&instance, &meta);
 
   let jvm_args = build_jvm_args(&instance, &meta, &classpath, &config);
   let game_args = build_game_args(&instance, &meta, &config);
@@ -51,6 +48,7 @@ pub(super) async fn launch_game(instance: Instance, config: LaunchConfig) -> cra
     .stderr(Stdio::piped())
     .spawn()
     .map_err(|e| crate::Error::Launcher(format!("Failed to execute Minecraft process: {}", e)))?;
+  tracing::info!("Minecraft {} is running!", &config.version);
 
   Ok(LaunchHandle { id: config.id, child })
 }
@@ -120,6 +118,8 @@ fn build_jvm_args(
     args.push(cp.to_string());
   }
 
+  args.push(format!("-Djna.tmpdir={}", crate::platform::tmp_dir()));
+
   args.push(meta.main_class.clone());
 
   args
@@ -141,7 +141,7 @@ fn build_game_args(instance: &Instance, meta: &ProcessedVersionMeta, config: &La
     ("auth_session", token.as_ref()), // for older versions
     ("auth_access_token", token.as_ref()),
     ("user_type", "msa"),
-    ("version_type", "Pandax"),
+    ("version_type", "Blazar"),
     // External
   ]);
 

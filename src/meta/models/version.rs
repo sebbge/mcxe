@@ -16,14 +16,14 @@ where
   Ok(vec.into_iter().map(|mv| (mv.id.clone(), Version::from(mv))).collect())
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Default, Deserialize, Debug)]
 pub struct VersionManifest {
   pub latest: LatestVersions,
   #[serde(deserialize_with = "manifest_versions_vec_to_indexmap")]
   pub versions: IndexMap<String, Version>,
 }
 
-#[derive(Default, Deserialize, Debug)]
+#[derive(Default, Serialize, Deserialize, Debug, Clone)]
 pub struct LatestVersions {
   pub release: String,
   pub snapshot: String,
@@ -46,7 +46,7 @@ pub struct ManifestVersion {
 }
 
 //====VERSION METADATA====//
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 pub struct Version {
   pub id: String,
   pub name: String,
@@ -63,7 +63,7 @@ pub struct Version {
   // pub meta: Option<ProcessedVersionMeta>,
 }
 
-#[derive(Serialize, Default, Debug)]
+#[derive(Serialize, Default, Debug, Clone)]
 pub enum VersionStatus {
   #[default]
   Unchecked,

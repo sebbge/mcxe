@@ -2,7 +2,10 @@ mod models;
 pub use models::*;
 use serde::de::DeserializeOwned;
 
-use crate::meta::{FullVersionMeta, PartialVersionMeta, ProcessedVersionMeta, Version, VersionStatus};
+use crate::{
+  LatestVersions,
+  meta::{FullVersionMeta, PartialVersionMeta, ProcessedVersionMeta, Version, VersionManifest, VersionStatus},
+};
 use indexmap::IndexMap;
 use std::{
   path::{Path, PathBuf},
@@ -16,6 +19,7 @@ pub struct VersionManager {
   pub versions_dir: PathBuf,
   manifest: ManifestManager,
   versions: IndexMap<String, Version>,
+  latest_versions: Option<LatestVersions>,
 }
 impl VersionManager {
   pub fn new(
@@ -30,11 +34,15 @@ impl VersionManager {
       versions_dir,
       manifest,
       versions: IndexMap::new(),
+      latest_versions: None,
     }
   }
 
   pub async fn init(&mut self) -> crate::Result<()> {
-    let mut manifest = self.manifest.get().await?;
+    let mut manifest = self.manifest.get().await.unwrap_or_else(|e| {
+      tracing::error!("Couldn't get minecraft version manifest: {}", e);
+      VersionManifest::default()
+    });
     let mut external_versions = IndexMap::new();
 
     let version_folders = crate::io::get_subfolders(&self.versions_dir).await?;
@@ -86,8 +94,23 @@ impl VersionManager {
 
     self.versions = external_versions;
     self.versions.extend(manifest.versions);
+    self.latest_versions = Some(manifest.latest);
 
     Ok(())
+  }
+
+  pub fn versions(&self) -> Vec<Version> {
+    self.versions.values().cloned().collect()
+  }
+
+  pub async fn latest_versions(&self) -> LatestVersions {
+    if let Some(latest) = &self.latest_versions {
+      return latest.clone();
+    }
+    self.manifest.get().await.map(|m| m.latest).unwrap_or_else(|e| {
+      tracing::error!("Couldn't get latest minecraft versions: {}", e);
+      LatestVersions::default()
+    })
   }
   //
 

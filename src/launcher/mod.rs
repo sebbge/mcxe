@@ -90,7 +90,6 @@ impl InnerLauncher {
 
     self.version.write().await.init().await
   }
-
   //
 
   pub async fn download(
@@ -102,14 +101,14 @@ impl InnerLauncher {
     let meta = instance.version.read().await.meta(version_id).await?;
 
     //= JAVA
-    let java_version = meta.java_version.clone().map(|v| v.major_version).unwrap_or(21);
-    let java_download = if instance.java.get_java(&java_version)?.is_none() {
+    let (path_to_java, java_version) = instance.java.get_java(&meta.java_version)?;
+    let java_handle = if path_to_java.is_none() {
       let id = format!("jre-{}:{}", java_version, &download_id);
 
       let (download, handle) = Download::new(id).await;
 
       let instance_ = Arc::clone(&instance);
-      download::download_java(instance_, java_version, download);
+      download::download_java(instance_, download, java_version);
 
       Some(handle)
     } else {
@@ -117,12 +116,9 @@ impl InnerLauncher {
     };
 
     //= GAME
-    let (download, handle) = Download::new(download_id).await;
-
-    download::download_game(instance, meta, download);
-    //
-
-    Ok((java_download, handle))
+    let (download, mc_handle) = Download::new(download_id).await;
+    download::download_game(instance, download, meta);
+    Ok((java_handle, mc_handle))
   }
 
   pub async fn launch(&self, instance: Instance, config: LaunchConfig) -> crate::Result<LaunchHandle> {

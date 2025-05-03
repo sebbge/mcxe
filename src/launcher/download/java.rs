@@ -1,7 +1,7 @@
 use super::Download;
 use crate::Instance;
 
-pub fn download_java(instance: Instance, version: u16, download: Download) {
+pub fn download_java(instance: Instance, download: Download, version: u16) {
   tokio::spawn(async move {
     let download_result: crate::Result<Option<()>> = async {
       //- Meta
@@ -16,16 +16,28 @@ pub fn download_java(instance: Instance, version: u16, download: Download) {
 
       let jre_response = crate::net::get(&package.url).await?;
 
-      crate::io::write_stream(&zip_path, jre_response, || download.is_cancelled()).await?;
+      crate::util::transfer::download_and_write(
+        jre_response,
+        &zip_path,
+        || download.is_cancelled(),
+        |size| download.add_bytes(size, ""),
+      )
+      .await?;
 
       //- Install
       use std::io::Read;
       #[cfg(unix)]
-      std::os::unix::fs::PermissionsExt;
+      use std::os::unix::fs::PermissionsExt;
 
       download.set_installing("Extracting Java Runtime Environment").await;
       crate::io::zip::for_each(&zip_path, |mut file| {
-        let name = file.name();
+        let mut path_parts = file.name().splitn(2, '/');
+        let _ = path_parts.next();
+        let name = path_parts.next().unwrap_or("");
+
+        if name.is_empty() {
+          return Ok(());
+        }
 
         let mut out_path = jre_dir.clone();
         out_path.push(name);
@@ -40,19 +52,21 @@ pub fn download_java(instance: Instance, version: u16, download: Download) {
           let mut bytes = Vec::with_capacity(file.size() as usize);
           file
             .read_to_end(&mut bytes)
-            .map_err(|e| crate::io::IOError::from_io(e, &zip_path))?;
+            .map_err(|e| crate::io::IoError::from_io(e, &zip_path))?;
 
           crate::io::write_sync(&out_path, &bytes)?;
 
           #[cfg(unix)]
           if name.contains("/bin/java") {
             let perms = std::fs::Permissions::from_mode(0o755);
-            std::fs::set_permissions(&out_path, perms).map_err(|e| crate::io::IOError::from_io(e, &out_path))?;
+            std::fs::set_permissions(&out_path, perms).map_err(|e| crate::io::IoError::from_io(e, &out_path))?;
           }
         }
 
         Ok(())
       })?;
+
+      crate::io::delete_file(zip_path).await.ok();
 
       Ok(Some(()))
     }
@@ -62,6 +76,6 @@ pub fn download_java(instance: Instance, version: u16, download: Download) {
       Ok(None) => download.cancel("").await,
       Ok(Some(())) => download.finish("").await,
       Err(e) => download.fail(e.to_string()).await,
-    }
+    };
   });
 }
