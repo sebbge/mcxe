@@ -17,8 +17,8 @@ pub(crate) type Instance = std::sync::Arc<InnerLauncher>;
 pub(crate) struct InnerLauncher {
   launcher_name: String,
   launcher_version: String,
-  root_dir: PathBuf,
-  games_dir: PathBuf,
+  pub root_dir: PathBuf,
+  pub games_dir: PathBuf,
 
   pub version: RwLock<VersionManager>,
   library: LibraryManager,
@@ -95,7 +95,6 @@ impl InnerLauncher {
   pub async fn download(
     &self,
     instance: Instance,
-    download_id: String,
     version_id: &str,
   ) -> crate::Result<(Option<DownloadHandle>, DownloadHandle)> {
     let meta = instance.version.read().await.meta(version_id).await?;
@@ -103,12 +102,11 @@ impl InnerLauncher {
     //= JAVA
     let (path_to_java, java_version) = instance.java.get_java(&meta.java_version)?;
     let java_handle = if path_to_java.is_none() {
-      let id = format!("jre-{}:{}", java_version, &download_id);
+      let id = format!("jre-{}:{}", java_version, &version_id);
 
       let (download, handle) = Download::new(id).await;
 
-      let instance_ = Arc::clone(&instance);
-      download::download_java(instance_, download, java_version);
+      download::download_java(Arc::clone(&instance), download, java_version);
 
       Some(handle)
     } else {
@@ -116,12 +114,16 @@ impl InnerLauncher {
     };
 
     //= GAME
-    let (download, mc_handle) = Download::new(download_id).await;
+    let (download, mc_handle) = Download::new(version_id).await;
     download::download_game(instance, download, meta);
     Ok((java_handle, mc_handle))
   }
 
   pub async fn launch(&self, instance: Instance, config: LaunchConfig) -> crate::Result<LaunchHandle> {
-    launch::launch_game(instance, config).await
+    let meta = instance.version.read().await.meta(&config.version).await?;
+
+    let (launch, handle) = Launch::new(&config.id).await;
+    launch::launch_game(instance, launch, meta, config).await;
+    Ok(handle)
   }
 }

@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use shared::*;
 
 mod platform;
@@ -23,6 +25,14 @@ impl Launcher {
     self.0.init().await
   }
 
+  pub fn root_dir(&self) -> &Path {
+    &self.0.root_dir
+  }
+
+  pub fn games_dir(&self) -> &Path {
+    &self.0.games_dir
+  }
+
   pub async fn reload_versions(&self) -> Result<()> {
     self.0.version.write().await.init().await
   }
@@ -36,13 +46,9 @@ impl Launcher {
   }
   //
 
-  pub async fn download(
-    &self,
-    download_id: impl Into<String>,
-    version_id: &str,
-  ) -> crate::Result<(Option<DownloadHandle>, DownloadHandle)> {
+  pub async fn download(&self, version_id: &str) -> crate::Result<(Option<DownloadHandle>, DownloadHandle)> {
     let instance = std::sync::Arc::clone(&self.0);
-    self.0.download(instance, download_id.into(), version_id).await
+    self.0.download(instance, version_id).await
   }
 
   pub async fn launch(&self, config: LaunchConfig) -> crate::Result<LaunchHandle> {

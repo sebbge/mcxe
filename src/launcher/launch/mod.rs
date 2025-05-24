@@ -1,167 +1,108 @@
 mod models;
 pub use models::*;
 
-use crate::{
-  Instance,
-  meta::{ProcessedLibrary, ProcessedVersionMeta},
-};
-use std::{collections::HashMap, process::Stdio};
-use tokio::process::Command;
+mod command;
 
-pub(super) async fn launch_game(instance: Instance, config: LaunchConfig) -> crate::Result<LaunchHandle> {
-  let meta = instance.version.read().await.meta(&config.version).await?;
+use crate::{Instance, meta::ProcessedVersionMeta};
+use std::process::Stdio;
+use tokio::process::Child;
 
-  for native in meta.libraries.iter().filter(|l| l.is_native && !l.must_skip) {
-    let _io_permit = instance.io_s.clone().acquire_owned().await.unwrap();
-    instance.library.extract_native(&meta.id, native).await?;
-  }
+use std::sync::Arc;
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::sync::RwLock;
 
-  let java_path = if let Some(custom) = &config.custom_java {
-    custom.clone()
-  } else {
-    let (path, _) = instance.java.get_java(&meta.java_version)?;
-    path.ok_or_else(|| crate::Error::Launcher("Java is unavailable".into()))?
+pub(super) async fn launch_game(instance: Instance, launch: Launch, meta: ProcessedVersionMeta, config: LaunchConfig) {
+  let mut command = match command::build(instance, &launch, meta, &config).await {
+    Ok(cmd) => cmd,
+    Err(e) => {
+      tracing::error!("{}", e);
+      launch.fail(e.to_string()).await;
+      return;
+    }
   };
 
-  // meta.checksum()
-
-  if config.token.is_some() {
-    tracing::info!("Session found. Minecraft will run in online mode");
-  } else {
-    tracing::info!("NO SESSION FOUND. Minecraft will run in offline mode!");
-  }
-
-  let (classpath, _) = build_classpath(&instance, &meta);
-
-  let jvm_args = build_jvm_args(&instance, &meta, &classpath, &config);
-  let game_args = build_game_args(&instance, &meta, &config);
-  let args = [jvm_args, game_args].concat();
-
-  let mut command = Command::new(java_path);
-
-  #[cfg(windows)]
-  command.creation_flags(0x08000000);
-
-  let child = command
-    .args(args)
+  let child = match command
     .stdout(Stdio::piped()) // mc logs
     .stderr(Stdio::piped())
     .spawn()
-    .map_err(|e| crate::Error::Launcher(format!("Failed to execute Minecraft process: {}", e)))?;
-  tracing::info!("Minecraft {} is running!", &config.version);
-
-  Ok(LaunchHandle { id: config.id, child })
-}
-
-fn build_classpath(instance: &Instance, meta: &ProcessedVersionMeta) -> (String, Vec<ProcessedLibrary>) {
-  let client_path = instance.client.get_path(&meta.id).to_string_lossy().to_string();
-  let separator = crate::platform::classpath_separator();
-
-  let mut skipped_libs = Vec::new();
-
-  let mut classpath = Vec::new();
-  for lib in &meta.libraries {
-    if lib.must_skip {
-      skipped_libs.push(lib.clone());
-      continue;
+  {
+    Ok(child) => child,
+    Err(e) => {
+      tracing::error!("Failed to execute Minecraft process: {}", e);
+      launch.fail(e.to_string()).await;
+      return;
     }
-
-    let path = instance.library.get_lib_path(lib).to_string_lossy().to_string();
-
-    if !classpath.contains(&path) {
-      classpath.push(path);
-    }
-  }
-
-  classpath.push(client_path);
-  (classpath.join(separator), skipped_libs)
-}
-
-fn build_jvm_args(
-  instance: &Instance,
-  meta: &ProcessedVersionMeta,
-  classpath: &str,
-  config: &LaunchConfig,
-) -> Vec<String> {
-  let natives_dir = instance
-    .library
-    .get_version_natives_dir(&meta.id)
-    .to_string_lossy()
-    .to_string();
-  let libraries_dir = instance.library.libraries_dir.to_string_lossy().to_string();
-  let separator = crate::platform::classpath_separator().to_string();
-  let mut variables: HashMap<&str, &str> = HashMap::from([
-    // Minecraft
-    ("natives_directory", natives_dir.as_str()),
-    ("launcher_name", &instance.launcher_name),
-    ("launcher_version", &instance.launcher_version),
-    ("classpath", classpath),
-    // External
-    ("version_name", &meta.id),
-    ("library_directory", &libraries_dir),
-    ("classpath_separator", &separator),
-  ]);
-
-  let args = if let Some(extra) = &config.extra_jvm_args {
-    [meta.arguments.jvm.clone(), extra.clone()].concat()
-  } else {
-    meta.arguments.jvm.clone()
   };
 
-  let mut args = replace_placeholders(args, &mut variables);
+  tracing::info!("Minecraft is running");
 
-  if let Some(natives_dir) = variables.remove("natives_directory") {
-    args.push(format!("-Djava.library.path={}", natives_dir));
-  }
-  if let Some(cp) = variables.remove("classpath") {
-    args.push(String::from("-cp"));
-    args.push(cp.to_string());
-  }
-
-  args.push(format!("-Djna.tmpdir={}", crate::platform::tmp_dir()));
-
-  args.push(meta.main_class.clone());
-
-  args
+  tokio::spawn(watch_process(launch, child));
 }
 
-fn build_game_args(instance: &Instance, meta: &ProcessedVersionMeta, config: &LaunchConfig) -> Vec<String> {
-  let token = config.token.clone().unwrap_or_else(|| String::from("none"));
-  let game_dir = instance.games_dir.join(&config.directory).to_string_lossy().to_string();
-  let assets_dir = instance.asset.assets_dir.to_string_lossy().to_string();
+async fn watch_process(launch: Launch, mut child: Child) {
+  let stdout = child.stdout.take();
+  let stderr = child.stderr.take();
 
-  let mut variables = HashMap::from([
-    // Minecraft
-    ("auth_player_name", config.username.as_str()),
-    ("version_name", &meta.id),
-    ("game_directory", &game_dir),
-    ("assets_root", &assets_dir),
-    ("assets_index_name", &meta.asset_index.id),
-    ("auth_uuid", &config.uuid),
-    ("auth_session", token.as_ref()), // for older versions
-    ("auth_access_token", token.as_ref()),
-    ("user_type", "msa"),
-    ("version_type", "Blazar"),
-    // External
-  ]);
+  let stdout_log = Arc::new(RwLock::new(String::new()));
+  let stderr_log = Arc::new(RwLock::new(String::new()));
 
-  let args = if let Some(extra) = &config.extra_game_args {
-    [meta.arguments.game.clone(), extra.clone()].concat()
-  } else {
-    meta.arguments.game.clone()
-  };
+  if let Some(stdout) = stdout {
+    let log_clone = stdout_log.clone();
+    tokio::spawn(async move {
+      let reader = BufReader::new(stdout);
+      let mut lines = reader.lines();
+      while let Ok(Some(line)) = lines.next_line().await {
+        log_clone.write().await.push_str(&format!("{line}\n"));
+      }
+    });
+  }
 
-  replace_placeholders(args, &mut variables)
-}
+  if let Some(stderr) = stderr {
+    let log_clone = stderr_log.clone();
+    tokio::spawn(async move {
+      let reader = BufReader::new(stderr);
+      let mut lines = reader.lines();
+      while let Ok(Some(line)) = lines.next_line().await {
+        log_clone.write().await.push_str(&format!("{line}\n"));
+      }
+    });
+  }
 
-fn replace_placeholders(args: Vec<String>, variables: &mut HashMap<&str, &str>) -> Vec<String> {
-  let re = regex::Regex::new(r"\$\{([^}]+)\}").unwrap();
+  loop {
+    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
-  args
-    .into_iter()
-    .map(|arg| {
-      re.replace_all(&arg, |caps: &regex::Captures| variables.remove(&caps[1]).unwrap_or(""))
-        .to_string()
-    })
-    .collect()
+    launch.set_playing().await;
+
+    if launch.is_killed() {
+      if let Err(e) = child.kill().await {
+        tracing::warn!("Failed to kill process: {e}");
+        break;
+      }
+      tracing::info!("Minecraft exited successfully!");
+      launch.exit().await;
+      break;
+    }
+
+    match child.try_wait() {
+      Ok(None) => continue,
+      Ok(Some(output)) => {
+        if output.success() {
+          tracing::info!("Minecraft exited successfully!");
+          launch.exit().await;
+          tracing::info!("OUT: {}", stdout_log.read().await.clone());
+        } else {
+          tracing::error!("Minecraft exited with an error.");
+
+          launch.crash(stderr_log.read().await.clone()).await;
+          tracing::error!("ERR: {}", stderr_log.read().await.clone());
+        }
+        break;
+      }
+      Err(e) => {
+        tracing::error!("Error while waiting for Minecraft process: {e}");
+        launch.fail(e.to_string()).await;
+        break;
+      }
+    }
+  }
 }

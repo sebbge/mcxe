@@ -1,6 +1,6 @@
 use serde::Serialize;
-use std::sync::{Arc, atomic};
-use std::time::Instant;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::{sync::Arc, time::Instant};
 use time::OffsetDateTime;
 use tokio::sync::RwLock;
 use tokio::sync::watch::{Receiver, Sender};
@@ -27,7 +27,7 @@ pub enum DownloadStatus {
   Cancelled,
 }
 
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub struct DownloadState {
   pub id: String,
   pub status: DownloadStatus,
@@ -41,17 +41,7 @@ pub struct DownloadState {
 }
 impl DownloadState {
   fn new(id: String) -> Self {
-    Self {
-      id,
-      status: DownloadStatus::default(),
-      message: String::new(),
-      total_bytes: 0,
-      downloaded_bytes: 0,
-      progress: 0.0,
-      start: None,
-      finish: None,
-      started_at: None,
-    }
+    Self { id, ..Self::default() }
   }
 
   fn start(&mut self, tx: &Sender<Self>) {
@@ -131,6 +121,7 @@ impl DownloadState {
 }
 
 //- Public download handle
+#[derive(Clone)]
 pub struct DownloadHandle {
   pub id: String,
   pub rx: Receiver<DownloadState>,
@@ -213,13 +204,13 @@ impl Download {
 
 //- Download cancel flag
 #[derive(Default, Clone)]
-struct CancelFlag(Arc<atomic::AtomicBool>);
+struct CancelFlag(Arc<AtomicBool>);
 impl CancelFlag {
   fn cancel(&self) {
-    self.0.store(true, atomic::Ordering::Relaxed);
+    self.0.store(true, Ordering::Relaxed);
   }
 
   fn is_cancelled(&self) -> bool {
-    self.0.load(atomic::Ordering::Relaxed)
+    self.0.load(Ordering::Relaxed)
   }
 }
