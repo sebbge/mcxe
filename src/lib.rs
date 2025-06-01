@@ -46,13 +46,21 @@ impl Launcher {
   }
   //
 
-  pub async fn download(&self, version_id: &str) -> crate::Result<(Option<DownloadHandle>, DownloadHandle)> {
+  pub async fn download(
+    &self,
+    version_id: &str,
+  ) -> crate::Result<(Option<TaskHandle<Download>>, TaskHandle<Download>)> {
     let instance = std::sync::Arc::clone(&self.0);
     self.0.download(instance, version_id).await
   }
 
-  pub async fn launch(&self, config: LaunchConfig) -> crate::Result<LaunchHandle> {
+  pub async fn launch(&self, config: LaunchConfig) -> crate::Result<TaskHandle<Process>> {
     let instance = std::sync::Arc::clone(&self.0);
     self.0.launch(instance, config).await
+  }
+
+  pub async fn checksum(&self, version_id: &str) -> crate::Result<TaskHandle<Operation>> {
+    let instance = std::sync::Arc::clone(&self.0);
+    self.0.checksum(instance, version_id).await
   }
 }

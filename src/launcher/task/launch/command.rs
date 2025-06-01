@@ -1,4 +1,4 @@
-use super::{Launch, LaunchConfig};
+use super::{LaunchConfig, ProcessTask};
 
 use crate::{
   Instance,
@@ -9,15 +9,10 @@ use tokio::process::Command;
 
 pub(super) async fn build(
   instance: Instance,
-  launch: &Launch,
+  process: &ProcessTask,
   meta: ProcessedVersionMeta,
   config: &LaunchConfig,
 ) -> crate::Result<Command> {
-  for native in meta.libraries.iter().filter(|l| l.is_native && !l.must_skip) {
-    let _io_permit = instance.io_s.clone().acquire_owned().await.unwrap();
-    instance.library.extract_native(&meta.id, native).await?;
-  }
-
   let java_path = if let Some(custom) = &config.custom_java {
     custom.clone()
   } else {
@@ -25,9 +20,12 @@ pub(super) async fn build(
     path.ok_or_else(|| crate::Error::Launcher("Java is unavailable".into()))?
   };
 
-  //TODO: meta.checksum()
+  for native in meta.libraries.iter().filter(|l| l.is_native && !l.must_skip) {
+    let _io_permit = instance.io_s.clone().acquire_owned().await.unwrap();
+    instance.library.extract_native(&meta.id, native).await?;
+  }
 
-  launch.start().await;
+  process.start().await;
 
   if config.token.is_some() {
     tracing::info!("Session found. Minecraft will run in online mode");

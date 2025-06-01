@@ -1,9 +1,9 @@
-use super::{Download, Task, TaskResult};
+use super::{DownloadTask, Task, TaskResult};
 use crate::Instance;
 use crate::meta::{Asset, AssetIndex, File, ProcessedLibrary, ProcessedVersionMeta};
 use futures::future;
 
-pub fn download_game(instance: Instance, download: Download, meta: ProcessedVersionMeta) {
+pub(crate) fn download_game(instance: Instance, download: DownloadTask, meta: ProcessedVersionMeta) {
   tokio::spawn(async move {
     let download_result: crate::Result<Option<()>> = async {
       //- Meta
@@ -94,7 +94,7 @@ pub fn download_game(instance: Instance, download: Download, meta: ProcessedVers
 
     match download_result {
       Ok(None) => download.cancel("").await,
-      Ok(Some(())) => download.finish("").await,
+      Ok(Some(())) => download.complete("").await,
       Err(e) => download.fail(e.to_string()).await,
     };
   });
@@ -102,7 +102,7 @@ pub fn download_game(instance: Instance, download: Download, meta: ProcessedVers
 
 fn build_lib_tasks(
   instance: &Instance,
-  download: &Download,
+  download: &DownloadTask,
   libraries: Vec<ProcessedLibrary>,
 ) -> (Vec<Task<ProcessedLibrary>>, Vec<ProcessedLibrary>) {
   let mut skipped = Vec::new();
@@ -159,7 +159,7 @@ fn build_lib_tasks(
   (tasks, skipped)
 }
 
-fn build_asset_tasks(instance: &Instance, download: &Download, index: AssetIndex) -> Vec<Task<Asset>> {
+fn build_asset_tasks(instance: &Instance, download: &DownloadTask, index: AssetIndex) -> Vec<Task<Asset>> {
   let mut tasks = Vec::new();
 
   for asset in index.objects {
@@ -199,7 +199,7 @@ fn build_asset_tasks(instance: &Instance, download: &Download, index: AssetIndex
   tasks
 }
 
-fn build_client_task(instance: &Instance, download: &Download, client: File, v_id: &str) -> Task<File> {
+fn build_client_task(instance: &Instance, download: &DownloadTask, client: File, v_id: &str) -> Task<File> {
   let v_id = v_id.to_string();
   let instance = instance.clone();
   let download = download.clone();

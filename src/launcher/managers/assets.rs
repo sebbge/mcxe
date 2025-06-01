@@ -57,7 +57,7 @@ impl AssetManager {
 
   pub fn get_asset_url_and_path(&self, asset: &Asset) -> crate::Result<(String, PathBuf)> {
     if asset.hash.len() < 2 {
-      return Err(crate::Error::Download(format!("Invalid asset hash: {}", &asset.hash)));
+      return Err(crate::Error::Metadata(format!("Invalid asset hash: {}", &asset.hash)));
     }
 
     let prefix = &asset.hash[0..2];
@@ -66,7 +66,7 @@ impl AssetManager {
       .assets_url
       .join(&format!("{}/", &prefix))
       .and_then(|url| url.join(&asset.hash))
-      .map_err(|_| crate::Error::Download(format!("Invalid asset hash: {}", &asset.hash)))?;
+      .map_err(|_| crate::Error::Metadata(format!("Invalid asset hash: {}", &asset.hash)))?;
     let path = self.assets_dir.join("objects").join(prefix).join(&asset.hash);
 
     Ok((url.to_string(), path))

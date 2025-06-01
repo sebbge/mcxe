@@ -1,7 +1,7 @@
-use super::Download;
+use super::DownloadTask;
 use crate::Instance;
 
-pub fn download_java(instance: Instance, download: Download, version: u16) {
+pub(crate) fn download_java(instance: Instance, download: DownloadTask, version: u16) {
   tokio::spawn(async move {
     let download_result: crate::Result<Option<()>> = async {
       //- Meta
@@ -74,7 +74,7 @@ pub fn download_java(instance: Instance, download: Download, version: u16) {
 
     match download_result {
       Ok(None) => download.cancel("").await,
-      Ok(Some(())) => download.finish("").await,
+      Ok(Some(())) => download.complete("").await,
       Err(e) => download.fail(e.to_string()).await,
     };
   });

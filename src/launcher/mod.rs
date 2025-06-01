@@ -1,12 +1,10 @@
 mod builder;
 pub use builder::{LauncherConfig, LauncherConfigBuilder};
 
-mod managers;
+mod task;
+pub use task::*;
 
-mod download;
-pub use download::*;
-mod launch;
-pub use launch::*;
+mod managers;
 
 use managers::{AssetManager, ClientManager, JavaManager, LibraryManager, VersionManager};
 use std::path::PathBuf;
@@ -96,7 +94,7 @@ impl InnerLauncher {
     &self,
     instance: Instance,
     version_id: &str,
-  ) -> crate::Result<(Option<DownloadHandle>, DownloadHandle)> {
+  ) -> crate::Result<(Option<TaskHandle<Download>>, TaskHandle<Download>)> {
     let meta = instance.version.read().await.meta(version_id).await?;
 
     //= JAVA
@@ -104,9 +102,9 @@ impl InnerLauncher {
     let java_handle = if path_to_java.is_none() {
       let id = format!("jre-{}:{}", java_version, &version_id);
 
-      let (download, handle) = Download::new(id).await;
+      let (download, handle) = DownloadTask::new(id).await;
 
-      download::download_java(Arc::clone(&instance), download, java_version);
+      download_java(Arc::clone(&instance), download, java_version);
 
       Some(handle)
     } else {
@@ -114,16 +112,26 @@ impl InnerLauncher {
     };
 
     //= GAME
-    let (download, mc_handle) = Download::new(version_id).await;
-    download::download_game(instance, download, meta);
+    let (download, mc_handle) = DownloadTask::new(version_id).await;
+    download_game(instance, download, meta);
     Ok((java_handle, mc_handle))
   }
 
-  pub async fn launch(&self, instance: Instance, config: LaunchConfig) -> crate::Result<LaunchHandle> {
+  pub async fn launch(&self, instance: Instance, config: LaunchConfig) -> crate::Result<TaskHandle<Process>> {
     let meta = instance.version.read().await.meta(&config.version).await?;
 
-    let (launch, handle) = Launch::new(&config.id).await;
-    launch::launch_game(instance, launch, meta, config).await;
+    let (launch, handle) = ProcessTask::new(&config.id).await;
+    launch_game(instance, launch, meta, config).await;
+    Ok(handle)
+  }
+
+  pub async fn checksum(&self, instance: Instance, version_id: &str) -> crate::Result<TaskHandle<Operation>> {
+    let meta = instance.version.read().await.meta(version_id).await?;
+
+    let (operation, handle) = OperationTask::new(version_id, OperationKind::Repairing).await;
+
+    let _report = checksum(instance, operation, meta, false).await;
+
     Ok(handle)
   }
 }

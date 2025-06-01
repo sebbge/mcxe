@@ -43,6 +43,9 @@ impl LibraryManager {
   pub async fn extract_native(&self, version_id: &str, native: &ProcessedLibrary) -> crate::Result<()> {
     let natives_dir = self.get_version_natives_dir(version_id);
     let path = self.get_lib_path(native);
+    if !path.exists() {
+      return Ok(());
+    }
 
     crate::io::zip::for_each(&path, |mut file: crate::io::zip::ZipFile| {
       let name = file.name();
