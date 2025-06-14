@@ -3,6 +3,7 @@ use super::{AssetIndexFile, ClientDownloads, JavaVersion, Logging, VersionType};
 #[derive(Debug, Clone)]
 pub struct ProcessedVersionMeta {
   pub id: String,
+  pub inherits_from: Option<String>,
   pub type_: VersionType,
   pub asset_index: AssetIndexFile,
   pub assets: String,

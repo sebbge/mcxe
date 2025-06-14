@@ -1,7 +1,7 @@
-use super::DownloadTask;
+use super::{super::TaskManager, Download};
 use crate::Instance;
 
-pub(crate) fn download_java(instance: Instance, download: DownloadTask, version: u16) {
+pub(crate) fn download_java(instance: Instance, download: TaskManager<Download>, version: u16) {
   tokio::spawn(async move {
     let download_result: crate::Result<Option<()>> = async {
       //- Meta
@@ -19,7 +19,7 @@ pub(crate) fn download_java(instance: Instance, download: DownloadTask, version:
       crate::util::transfer::download_and_write(
         jre_response,
         &zip_path,
-        || download.is_cancelled(),
+        || download.was_aborted(),
         |size| download.add_bytes(size, ""),
       )
       .await?;
@@ -29,7 +29,8 @@ pub(crate) fn download_java(instance: Instance, download: DownloadTask, version:
       #[cfg(unix)]
       use std::os::unix::fs::PermissionsExt;
 
-      download.set_installing("Extracting Java Runtime Environment").await;
+      download.set_installing().await;
+      download.set_message("Extracting Java Runtime Environment").await;
       crate::io::zip::for_each(&zip_path, |mut file| {
         let mut path_parts = file.name().splitn(2, '/');
         let _ = path_parts.next();
@@ -73,8 +74,8 @@ pub(crate) fn download_java(instance: Instance, download: DownloadTask, version:
     .await;
 
     match download_result {
-      Ok(None) => download.cancel("").await,
-      Ok(Some(())) => download.complete("").await,
+      Ok(None) => download.abort().await,
+      Ok(Some(())) => download.success().await,
       Err(e) => download.fail(e.to_string()).await,
     };
   });

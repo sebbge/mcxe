@@ -10,22 +10,21 @@ use url::Url;
 impl FullVersionMeta {
   /// Processes this full version metadata into a `ProcessedVersionMeta`.
   pub fn process(self) -> ProcessedVersionMeta {
-    ProcessedVersionMeta::process(self)
+    ProcessedVersionMeta::process(self, None)
   }
 
   /// Merges this full version with a child version and processes the result.
   pub fn merge_and_process(self, child_meta: PartialVersionMeta) -> ProcessedVersionMeta {
-    let meta = ProcessedVersionMeta::merge(self, child_meta);
-    ProcessedVersionMeta::process(meta)
+    ProcessedVersionMeta::merge_and_process(self, child_meta)
   }
 }
 
 // ===> Merging and processing
 impl ProcessedVersionMeta {
-  /// Merges a full version with a child version, producing a unified `FullVersionMeta`.
-  fn merge(mut parent: FullVersionMeta, child: PartialVersionMeta) -> FullVersionMeta {
+  /// Merges a full version with a child version, producing a unified `ProcessedVersionMeta`.
+  fn merge_and_process(mut parent: FullVersionMeta, child: PartialVersionMeta) -> ProcessedVersionMeta {
     parent.libraries.extend(child.libraries);
-    // dedup     meta.deduplicate_libraries();
+    parent.deduplicate_libraries().ok();
 
     let arguments = match (parent.arguments, child.arguments) {
       (Some(mut a), Some(b)) => {
@@ -44,7 +43,7 @@ impl ProcessedVersionMeta {
       (None, None) => None,
     };
 
-    FullVersionMeta {
+    let full_meta = FullVersionMeta {
       id: child.id,
       type_: child.type_,
       asset_index: parent.asset_index,
@@ -60,11 +59,13 @@ impl ProcessedVersionMeta {
       release_time: child.release_time,
       time: child.time,
       logging: parent.logging,
-    }
+    };
+
+    ProcessedVersionMeta::process(full_meta, Some(parent.id))
   }
 
   /// Processes a `FullVersionMeta` into a `ProcessedVersionMeta`.
-  fn process(meta: FullVersionMeta) -> ProcessedVersionMeta {
+  fn process(meta: FullVersionMeta, parent_id: Option<String>) -> ProcessedVersionMeta {
     let libraries = meta
       .libraries
       .into_iter()
@@ -80,6 +81,7 @@ impl ProcessedVersionMeta {
 
     ProcessedVersionMeta {
       id: meta.id,
+      inherits_from: parent_id,
       type_: meta.type_,
       asset_index: meta.asset_index,
       assets: meta.assets,
@@ -111,11 +113,11 @@ impl Rule {
         }
       }
 
-      if let Some(arch) = &os_rule.arch {
-        if arch != std::env::consts::ARCH {
-          return None;
-        }
-      }
+      // if let Some(arch) = &os_rule.arch {
+      //   if arch != std::env::consts::ARCH {
+      //     return None;
+      //   }
+      // }
 
       //- If there is not OS or ARCH, the rule applies for all systems.
     }
@@ -199,7 +201,7 @@ impl Library {
       //- the "classifiers" field within the main library entry.
       //- +1.19 format doesn't have this field, native libraries are
       //- defined as separate artifacts with their own library entries
-      //- with "natives-{os}" in the name. (W mojang)
+      //- with "natives-{os}" in the name.
       if !downloads.classifiers.is_empty() {
         for (key, lib) in downloads.classifiers.into_iter() {
           let must_skip = Library::must_skip_native(&key);
@@ -244,8 +246,6 @@ impl Library {
 
     libs
   }
-
-  //
 
   /// Parses the library name into `(group, name, version, classifier, extension)`.
   fn parse_lib_name(&self) -> crate::Result<(String, String, String, Option<String>, String)> {
@@ -319,32 +319,29 @@ impl Library {
 }
 
 impl FullVersionMeta {
-  #[allow(unused)] // TODO: deduplicate libraries
-  fn deduplicate_libraries(&mut self) {
-    let mut map: HashMap<(String, String, Option<String>), Library> = HashMap::new();
+  fn deduplicate_libraries(&mut self) -> crate::Result<()> {
+    let mut seen: HashMap<(String, String, Option<String>, String), Library> = HashMap::new();
 
     for lib in std::mem::take(&mut self.libraries) {
-      let (group, name, version, classifier, _) = match lib.parse_lib_name() {
-        Ok(parsed) => parsed,
-        Err(_) => continue,
-      };
+      let (group, name, version, classifier, extension) = lib.parse_lib_name()?;
+      let key = (group, name, classifier, extension);
 
-      let key = (group, name, classifier);
-
-      match map.get(&key) {
+      match seen.get_mut(&key) {
         Some(existing_lib) => {
-          let (_, _, existing_version, _, _) = existing_lib.parse_lib_name().unwrap();
+          let (_, _, existing_version, _, _) = existing_lib.parse_lib_name()?;
           if version > existing_version {
-            map.insert(key, lib);
-          }
+            *existing_lib = lib;
+          };
         }
         None => {
-          map.insert(key, lib);
+          seen.insert(key, lib);
         }
-      }
+      };
     }
 
-    self.libraries = map.into_values().collect();
+    self.libraries = seen.into_values().collect();
+
+    Ok(())
   }
 }
 

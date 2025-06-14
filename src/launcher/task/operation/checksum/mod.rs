@@ -1,4 +1,4 @@
-use super::OperationTask;
+use super::{super::TaskManager, Operation};
 use crate::{Instance, meta::ProcessedVersionMeta};
 
 use serde::Serialize;
@@ -14,7 +14,12 @@ pub struct ChecksumReport {
   download_required: bool,
 }
 
-pub(crate) async fn checksum(instance: Instance, op: OperationTask, meta: ProcessedVersionMeta, check_assets: bool) {
+pub(crate) async fn checksum(
+  instance: Instance,
+  op: TaskManager<Operation>,
+  meta: ProcessedVersionMeta,
+  check_assets: bool,
+) {
   tokio::spawn(async move {
     let mut rep = ChecksumReport::default();
     op.start().await;
@@ -38,8 +43,8 @@ pub(crate) async fn checksum(instance: Instance, op: OperationTask, meta: Proces
 
     //--- Libraries
     for lib in &meta.libraries {
-      if op.is_cancelled() {
-        op.cancel().await;
+      if op.was_aborted() {
+        op.abort().await;
         break;
       }
 
@@ -76,14 +81,15 @@ pub(crate) async fn checksum(instance: Instance, op: OperationTask, meta: Proces
           rep.errors.push(msg);
 
           let out = serde_json::to_string(&rep).ok();
-          op.complete(out).await;
+          op.set_out(out).await;
+          op.success().await;
           return;
         }
       };
 
       for asset in asset_index.objects {
-        if op.is_cancelled() {
-          op.cancel().await;
+        if op.was_aborted() {
+          op.abort().await;
           break;
         }
 
@@ -116,7 +122,8 @@ pub(crate) async fn checksum(instance: Instance, op: OperationTask, meta: Proces
     }
 
     let out = serde_json::to_string(&rep).ok();
-    op.complete(out).await;
+    op.set_out(out).await;
+    op.success().await;
   });
 }
 

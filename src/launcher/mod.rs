@@ -53,7 +53,7 @@ impl InnerLauncher {
     let java = JavaManager::new(java_dir);
 
     let net_s = c.net_s.unwrap_or_else(|| Arc::new(Semaphore::new(10)));
-    let io_s = c.io_s.unwrap_or_else(|| Arc::new(Semaphore::new(2)));
+    let io_s = c.io_s.unwrap_or_else(|| Arc::new(Semaphore::new(4)));
 
     Self {
       launcher_name: c.name,
@@ -102,7 +102,7 @@ impl InnerLauncher {
     let java_handle = if path_to_java.is_none() {
       let id = format!("jre-{}:{}", java_version, &version_id);
 
-      let (download, handle) = DownloadTask::new(id).await;
+      let (download, handle) = TaskManager::new(id, TaskKind::Download).await;
 
       download_java(Arc::clone(&instance), download, java_version);
 
@@ -112,7 +112,7 @@ impl InnerLauncher {
     };
 
     //= GAME
-    let (download, mc_handle) = DownloadTask::new(version_id).await;
+    let (download, mc_handle) = TaskManager::new(version_id, TaskKind::Download).await;
     download_game(instance, download, meta);
     Ok((java_handle, mc_handle))
   }
@@ -120,7 +120,7 @@ impl InnerLauncher {
   pub async fn launch(&self, instance: Instance, config: LaunchConfig) -> crate::Result<TaskHandle<Process>> {
     let meta = instance.version.read().await.meta(&config.version).await?;
 
-    let (launch, handle) = ProcessTask::new(&config.id).await;
+    let (launch, handle) = TaskManager::new(&config.id, TaskKind::Process).await;
     launch_game(instance, launch, meta, config).await;
     Ok(handle)
   }
@@ -128,7 +128,7 @@ impl InnerLauncher {
   pub async fn checksum(&self, instance: Instance, version_id: &str) -> crate::Result<TaskHandle<Operation>> {
     let meta = instance.version.read().await.meta(version_id).await?;
 
-    let (operation, handle) = OperationTask::new(version_id, OperationKind::Repairing).await;
+    let (operation, handle) = TaskManager::new(version_id, TaskKind::Repair).await;
 
     let _report = checksum(instance, operation, meta, false).await;
 

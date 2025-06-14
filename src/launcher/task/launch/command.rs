@@ -1,4 +1,4 @@
-use super::{LaunchConfig, ProcessTask};
+use super::{super::TaskManager, LaunchConfig, Process};
 
 use crate::{
   Instance,
@@ -9,7 +9,7 @@ use tokio::process::Command;
 
 pub(super) async fn build(
   instance: Instance,
-  process: &ProcessTask,
+  process: &TaskManager<Process>,
   meta: ProcessedVersionMeta,
   config: &LaunchConfig,
 ) -> crate::Result<Command> {
@@ -22,7 +22,7 @@ pub(super) async fn build(
 
   for native in meta.libraries.iter().filter(|l| l.is_native && !l.must_skip) {
     let _io_permit = instance.io_s.clone().acquire_owned().await.unwrap();
-    instance.library.extract_native(&meta.id, native).await?;
+    instance.library.extract_native(&config.id, native).await?;
   }
 
   process.start().await;
@@ -50,7 +50,8 @@ pub(super) async fn build(
 }
 
 fn build_classpath(instance: &Instance, meta: &ProcessedVersionMeta) -> (String, Vec<ProcessedLibrary>) {
-  let client_path = instance.client.get_path(&meta.id).to_string_lossy().to_string();
+  let client_id = meta.inherits_from.as_ref().unwrap_or(&meta.id); // parent version id
+  let client_path = instance.client.get_path(client_id).to_string_lossy().to_string();
   let separator = crate::platform::classpath_separator();
 
   let mut skipped_libs = Vec::new();
@@ -81,7 +82,7 @@ fn build_jvm_args(
 ) -> Vec<String> {
   let natives_dir = instance
     .library
-    .get_version_natives_dir(&meta.id)
+    .get_natives_dir(&config.id)
     .to_string_lossy()
     .to_string();
   let libraries_dir = instance.library.libraries_dir.to_string_lossy().to_string();
@@ -108,7 +109,7 @@ fn build_jvm_args(
 
   let java_lib_arg = format!("-Djava.library.path={}", natives_dir);
   if !args.contains(&java_lib_arg) {
-    args.push(format!("-Djava.library.path={}", natives_dir));
+    args.push(java_lib_arg);
   }
 
   if !args.contains(&String::from("-cp")) {
@@ -118,7 +119,10 @@ fn build_jvm_args(
     }
   }
 
-  args.push(format!("-Djna.tmpdir={}", crate::platform::tmp_dir()));
+  let jna_tmp_arg = format!("-Djna.tmpdir={}", crate::platform::tmp_dir());
+  if !args.contains(&jna_tmp_arg) {
+    args.push(jna_tmp_arg);
+  }
 
   args.push(meta.main_class.clone());
 

@@ -3,6 +3,7 @@ pub use models::*;
 
 mod command;
 
+use super::TaskManager;
 use crate::{Instance, meta::ProcessedVersionMeta};
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -10,7 +11,7 @@ use tokio::process::Child;
 
 pub(crate) async fn launch_game(
   instance: Instance,
-  process: ProcessTask,
+  process: TaskManager<Process>,
   meta: ProcessedVersionMeta,
   config: LaunchConfig,
 ) {
@@ -41,7 +42,7 @@ pub(crate) async fn launch_game(
   tokio::spawn(watch_process(process, child));
 }
 
-async fn watch_process(process: ProcessTask, mut child: Child) {
+async fn watch_process(process: TaskManager<Process>, mut child: Child) {
   if let Some(stdout) = child.stdout.take() {
     let process = process.clone();
 
@@ -69,13 +70,13 @@ async fn watch_process(process: ProcessTask, mut child: Child) {
 
     process.set_playing().await;
 
-    if process.is_killed() {
+    if process.was_aborted() {
       if let Err(e) = child.kill().await {
         tracing::warn!("Failed to kill process: {e}");
         break;
       }
       tracing::info!("game exited successfully");
-      process.exit().await;
+      process.success().await;
       break;
     }
 
@@ -84,10 +85,10 @@ async fn watch_process(process: ProcessTask, mut child: Child) {
       Ok(Some(output)) => {
         if output.success() {
           tracing::info!("game exited successfully");
-          process.exit().await;
+          process.success().await;
         } else {
           tracing::error!("game exited with an error");
-          process.crash().await;
+          process.abort().await;
         }
         break;
       }

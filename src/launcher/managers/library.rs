@@ -35,13 +35,13 @@ impl LibraryManager {
     self.libraries_dir.join(&lib.path)
   }
 
-  pub fn get_version_natives_dir(&self, version_id: &str) -> PathBuf {
-    self.natives_dir.join(version_id)
+  pub fn get_natives_dir(&self, instance_id: &str) -> PathBuf {
+    self.natives_dir.join(instance_id)
   }
   //
 
   pub async fn extract_native(&self, version_id: &str, native: &ProcessedLibrary) -> crate::Result<()> {
-    let natives_dir = self.get_version_natives_dir(version_id);
+    let natives_dir = self.get_natives_dir(version_id);
     let path = self.get_lib_path(native);
     if !path.exists() {
       return Ok(());
