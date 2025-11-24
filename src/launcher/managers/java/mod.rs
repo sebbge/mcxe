@@ -7,10 +7,6 @@ use std::{path::Path, process::Command};
 
 use crate::meta::JavaVersion;
 
-// TODO: Windows 11 cmd prompt?
-// #[cfg(windows)]
-// use std::os::windows::process::CommandExt;
-
 pub struct JavaManager {
   pub java_dir: PathBuf,
 }
@@ -51,7 +47,7 @@ impl JavaManager {
     let output = Command::new(java_path)
       .arg("-version")
       .output()
-      .map_err(|e| crate::Error::Io(crate::io::IoError::from_io(e, java_path)))?;
+      .map_err(|e| crate::Error::Io(crate::fs::IoError::from_io(e, java_path)))?;
 
     Ok(output.status.success())
   }

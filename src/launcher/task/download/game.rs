@@ -14,7 +14,11 @@ pub(crate) fn download_game(instance: Instance, download: TaskManager<Download>,
       let libraries_size = instance.library.get_download_size(&libraries).await;
       let assets_size = instance.asset.get_download_size(&asset_index).await;
       let client_size = instance.client.get_download_size(&client, &meta.id).await;
-      let total = crate::util::op::saturating_sum(&[libraries_size, assets_size, client_size]);
+      let total = libraries_size.saturating_add(assets_size).saturating_add(client_size);
+      if total == 0 {
+        return Ok(Some(()));
+      }
+
       download.set_total(total).await;
       download.start().await;
 
@@ -143,7 +147,7 @@ fn build_lib_tasks(
 
         let io_permit = instance.io_s.clone().acquire_owned().await.unwrap();
         // download.set_message(&lib.path);
-        crate::io::write(&path, &bytes).await?;
+        crate::fs::write(&path, &bytes).await?;
         drop(io_permit);
 
         download.add_bytes(bytes.len(), &lib.path).await;
@@ -187,7 +191,7 @@ fn build_asset_tasks(
 
         let io_permit = instance.io_s.clone().acquire_owned().await.unwrap();
         // download.await.set_message(&asset.path);
-        crate::io::write(&path, &bytes).await?;
+        crate::fs::write(&path, &bytes).await?;
         drop(io_permit);
 
         download.add_bytes(bytes.len(), &asset.path).await;
@@ -231,7 +235,7 @@ fn build_client_task(
 
       let io_permit = instance.io_s.clone().acquire_owned().await.unwrap();
       // download.set_message(&message);
-      crate::io::write(&path, &bytes).await?;
+      crate::fs::write(&path, &bytes).await?;
       drop(io_permit);
 
       download.add_bytes(bytes.len(), &message).await;

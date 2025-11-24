@@ -83,7 +83,7 @@ impl InnerLauncher {
       &self.java.java_dir,
     ];
     for folder_path in tree {
-      crate::io::create_dir_all(folder_path).await?;
+      crate::fs::create_dir_all(folder_path).await?;
     }
 
     self.version.write().await.init().await

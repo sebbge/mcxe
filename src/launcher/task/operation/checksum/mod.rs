@@ -137,7 +137,7 @@ async fn check(path: &std::path::Path, sha1_opt: Option<&str>, label: &str) -> R
   }
 
   if let Some(sha1) = sha1_opt {
-    match crate::io::is_valid_sha1(path, sha1).await {
+    match crate::fs::is_valid_sha1(path, sha1).await {
       Ok(true) => return Ok(()),
       Ok(false) => return Err(CheckError::Corrupt(label.to_string())),
       Err(e) => {

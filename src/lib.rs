@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use shared::*;
+use common::*;
 
 mod platform;
 

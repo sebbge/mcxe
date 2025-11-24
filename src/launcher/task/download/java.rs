@@ -16,7 +16,7 @@ pub(crate) fn download_java(instance: Instance, download: TaskManager<Download>,
 
       let jre_response = crate::net::get(&package.url).await?;
 
-      crate::util::transfer::download_and_write(
+      crate::util::stream_to_file::<_, crate::Error>(
         jre_response,
         &zip_path,
         || download.was_aborted(),
@@ -31,7 +31,7 @@ pub(crate) fn download_java(instance: Instance, download: TaskManager<Download>,
 
       download.set_installing().await;
       download.set_message("Extracting Java Runtime Environment").await;
-      crate::io::zip::for_each(&zip_path, |mut file| {
+      crate::fs::zip::for_each(&zip_path, |mut file| {
         let mut path_parts = file.name().splitn(2, '/');
         let _ = path_parts.next();
         let name = path_parts.next().unwrap_or("");
@@ -44,30 +44,30 @@ pub(crate) fn download_java(instance: Instance, download: TaskManager<Download>,
         out_path.push(name);
 
         if file.name().ends_with('/') {
-          crate::io::create_dir_all_sync(&out_path)?;
+          crate::fs::create_dir_all_sync(&out_path)?;
         } else {
           if let Some(parent) = out_path.parent() {
-            crate::io::create_dir_all_sync(parent)?;
+            crate::fs::create_dir_all_sync(parent)?;
           }
 
           let mut bytes = Vec::with_capacity(file.size() as usize);
           file
             .read_to_end(&mut bytes)
-            .map_err(|e| crate::io::IoError::from_io(e, &zip_path))?;
+            .map_err(|e| crate::fs::IoError::from_io(e, &zip_path))?;
 
-          crate::io::write_sync(&out_path, &bytes)?;
+          crate::fs::write_sync(&out_path, &bytes)?;
 
           #[cfg(unix)]
           if name.contains("/bin/java") {
             let perms = std::fs::Permissions::from_mode(0o755);
-            std::fs::set_permissions(&out_path, perms).map_err(|e| crate::io::IoError::from_io(e, &out_path))?;
+            std::fs::set_permissions(&out_path, perms).map_err(|e| crate::fs::IoError::from_io(e, &out_path))?;
           }
         }
 
         Ok(())
       })?;
 
-      crate::io::delete_file(zip_path).await.ok();
+      crate::fs::delete_file(zip_path).await.ok();
 
       Ok(Some(()))
     }

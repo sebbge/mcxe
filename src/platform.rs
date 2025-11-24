@@ -1,7 +1,5 @@
-use std::{
-  env::consts::{ARCH, OS},
-  sync::OnceLock,
-};
+use std::env::consts::{ARCH, OS};
+use std::sync::OnceLock;
 
 static VALID_CLASSIFIERS: OnceLock<Vec<String>> = OnceLock::new();
 static CLASSPATH_SEPARATOR: OnceLock<&str> = OnceLock::new();
@@ -47,6 +45,6 @@ pub fn classpath_separator() -> &'static str {
 
 pub fn tmp_dir() -> String {
   let tmp_dir = std::env::temp_dir();
-  crate::io::create_dir_all_sync(&tmp_dir).ok();
+  crate::fs::create_dir_all_sync(&tmp_dir).ok();
   tmp_dir.to_string_lossy().to_string()
 }

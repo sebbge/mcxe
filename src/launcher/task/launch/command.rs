@@ -112,11 +112,11 @@ fn build_jvm_args(
     args.push(java_lib_arg);
   }
 
-  if !args.contains(&String::from("-cp")) {
-    if let Some(cp) = variables.remove("classpath") {
-      args.push(String::from("-cp"));
-      args.push(cp.to_string());
-    }
+  if !args.contains(&String::from("-cp"))
+    && let Some(cp) = variables.remove("classpath")
+  {
+    args.push(String::from("-cp"));
+    args.push(cp.to_string());
   }
 
   let jna_tmp_arg = format!("-Djna.tmpdir={}", crate::platform::tmp_dir());

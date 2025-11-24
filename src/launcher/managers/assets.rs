@@ -22,7 +22,7 @@ impl AssetManager {
     let fresh_index_bytes = crate::net::get_bytes(&index_meta.url).await?;
     let fresh_index = serde_json::from_slice::<AssetIndex>(&fresh_index_bytes)?;
 
-    crate::io::write(&index_path, &fresh_index_bytes).await?;
+    crate::fs::write(&index_path, &fresh_index_bytes).await?;
 
     Ok(fresh_index)
   }
@@ -32,7 +32,7 @@ impl AssetManager {
       return Ok(None);
     }
 
-    let index_bytes = crate::io::read(&index_path).await?;
+    let index_bytes = crate::fs::read(&index_path).await?;
 
     let index = serde_json::from_slice::<AssetIndex>(&index_bytes)?;
 

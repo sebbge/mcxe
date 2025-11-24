@@ -29,18 +29,17 @@ impl ManifestManager {
     let fresh_manifest_bytes = crate::net::get_bytes(self.url.as_ref()).await?;
     let fresh_manifest = serde_json::from_slice::<VersionManifest>(&fresh_manifest_bytes)?;
 
-    crate::io::write(&self.path, &fresh_manifest_bytes).await?;
+    crate::fs::write(&self.path, &fresh_manifest_bytes).await?;
 
     Ok(fresh_manifest)
   }
 
   async fn try_read(&self) -> crate::Result<Option<VersionManifest>> {
-    if !self.path.exists() || crate::io::is_old(&self.path, &self.refresh).await? {
+    if !self.path.exists() || crate::fs::is_old(&self.path, &self.refresh).await? {
       return Ok(None);
     }
 
-    let manifest_bytes = crate::io::read(&self.path).await?;
-
+    let manifest_bytes = crate::fs::read(&self.path).await?;
     let manifest = serde_json::from_slice::<VersionManifest>(&manifest_bytes)?;
 
     Ok(Some(manifest))

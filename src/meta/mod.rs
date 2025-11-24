@@ -1,5 +1,4 @@
-#![allow(dead_code)] // TODO: use unusued meta fileds
-
+#![allow(dead_code)] // TODO: unusued meta fields ?
 mod models;
 pub use models::*;
 
@@ -106,12 +105,11 @@ impl Rule {
   /// Evaluates the rule and returns `Some(Action::Allow)` or `Some(Action::Disallow)`
   /// if the rule applies to this system. Returns `None` if the rule is not relevant.
   fn evaluate(&self) -> Option<Action> {
-    if let Some(os_rule) = &self.os {
-      if let Some(os_name) = &os_rule.name {
-        if os_name.as_str() != std::env::consts::OS {
-          return None;
-        }
-      }
+    if let Some(os_rule) = &self.os
+      && let Some(os_name) = &os_rule.name
+      && os_name.as_str() != std::env::consts::OS
+    {
+      return None;
 
       // if let Some(arch) = &os_rule.arch {
       //   if arch != std::env::consts::ARCH {
@@ -124,7 +122,7 @@ impl Rule {
 
     if let Some(_feature_rule) = &self.features {
       //- Features of the official Minecraft Launcher
-      //- Not supported here
+      //- Not supported here atm
       return None;
     }
 
@@ -145,17 +143,16 @@ trait RuledItem {
     let mut action = Action::Disallow; // Disallow by default
 
     for rule in rules {
-      match rule.evaluate() {
-        Some(rule_action) => action = rule_action, // Rule is applicable; update the action.
-        None => (),                                // Rule is not applicable on this system; ignore.
-      }
+      if let Some(rule_action) = rule.evaluate() {
+        action = rule_action // Rule is applicable; update the action.
+      } // If rule is not applicable on this system; ignore.
     }
 
     !action.into_bool()
   }
 }
 
-//===> LIBRARY
+//===> LIBRARIES
 impl RuledItem for Library {
   fn get_rules(&self) -> Option<&Vec<Rule>> {
     self.rules.as_ref()
@@ -372,16 +369,12 @@ impl Arguments {
     let process_args = |args: Vec<Argument>| -> Vec<String> {
       let mut result = Vec::new();
       for argument in args {
-        match argument.process_argument() {
-          // Normal or valid ruled argument
-          Some(value) => match value {
+        if let Some(value) = argument.process_argument() {
+          match value {
             ArgumentValue::Single(arg) => result.push(arg),   // Add single argument
             ArgumentValue::Many(args) => result.extend(args), // Add multiple arguments
-          },
-
-          // Invalid ruled argument
-          None => (),
-        }
+          }
+        } // If None: Invalid ruled argument
       }
       result
     };

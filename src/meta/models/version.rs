@@ -1,13 +1,9 @@
 use super::{FullVersionMeta, PartialVersionMeta};
+
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize, de::Deserializer};
-use shared::util;
 
-//====VERSION MANIFEST====//
-
-/// Custom deserializer that converts a JSON array of [`ManifestVersion`] into an [`IndexMap<String, Version>`].
-///
-/// Each [`ManifestVersion`] is converted into a [`Version`] using the [`From<ManifestVersion>`] implementation.
+//===> VERSION MANIFEST
 fn manifest_versions_vec_to_indexmap<'de, D>(deserializer: D) -> Result<IndexMap<String, Version>, D::Error>
 where
   D: Deserializer<'de>,
@@ -45,7 +41,7 @@ pub struct ManifestVersion {
   // pub release_time: String,
 }
 
-//====VERSION METADATA====//
+//===> VERSION METADATA
 #[derive(Serialize, Debug, Clone)]
 pub struct Version {
   pub id: String,
@@ -106,7 +102,7 @@ impl From<PartialVersionMeta> for Version {
       .join(" ");
 
     Self {
-      name: util::format::capitalize(&name),
+      name: capitalize(&name),
       inherits_from: Some(v.inherits_from),
       id: v.id,
       type_: v.type_,
@@ -130,5 +126,13 @@ impl From<FullVersionMeta> for Version {
       is_external: true,
       status: VersionStatus::Unchecked,
     }
+  }
+}
+
+pub fn capitalize(s: &str) -> String {
+  let mut caracteres = s.chars();
+  match caracteres.next() {
+    Some(c) => c.to_uppercase().collect::<String>() + caracteres.as_str(),
+    None => String::new(),
   }
 }

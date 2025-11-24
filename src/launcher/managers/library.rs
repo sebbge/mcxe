@@ -47,7 +47,7 @@ impl LibraryManager {
       return Ok(());
     }
 
-    crate::io::zip::for_each(&path, |mut file: crate::io::zip::ZipFile| {
+    crate::fs::zip::for_each(&path, |mut file: crate::fs::zip::ZipFile| {
       let name = file.name();
 
       if name.starts_with("META-INF/") || name.ends_with('/') {
@@ -61,9 +61,9 @@ impl LibraryManager {
       let mut bytes = Vec::with_capacity(file.size() as usize);
       file
         .read_to_end(&mut bytes)
-        .map_err(|e| crate::io::IoError::from_io(e, &path))?;
+        .map_err(|e| crate::fs::IoError::from_io(e, &path))?;
 
-      crate::io::write_sync(&native_path, &bytes)?;
+      crate::fs::write_sync(&native_path, &bytes)?;
 
       Ok(())
     })?;

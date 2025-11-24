@@ -45,7 +45,7 @@ impl VersionManager {
     });
     let mut external_versions = IndexMap::new();
 
-    let version_folders = crate::io::get_subfolders(&self.versions_dir).await?;
+    let version_folders = crate::fs::get_subfolders(&self.versions_dir).await?;
     for version_id in version_folders {
       let version_path = self.get_version_path(&version_id);
 
@@ -56,7 +56,7 @@ impl VersionManager {
         } else {
           //? cache
           // version.meta = match manifest.latest.is_latest(&version_id) {
-          //   true => crate::io::read_json::<FullVersionMeta>(&version_path)
+          //   true => crate::fs::read_json::<FullVersionMeta>(&version_path)
           //     .await
           //     .ok()
           //     .map(|meta| meta.p),
@@ -65,7 +65,7 @@ impl VersionManager {
         }
       } else {
         //- expects full or partial/child version meta
-        let bytes = match crate::io::read(&version_path).await {
+        let bytes = match crate::fs::read(&version_path).await {
           Ok(b) => b,
           Err(e) => {
             tracing::error!("Couldn't load version {}: {}", &version_id, e);
@@ -141,7 +141,7 @@ impl VersionManager {
 
     let fresh_meta_bytes = crate::net::get_bytes(url).await?;
     let fresh_meta = serde_json::from_slice::<T>(&fresh_meta_bytes)?;
-    crate::io::write(&path, &fresh_meta_bytes).await?;
+    crate::fs::write(&path, &fresh_meta_bytes).await?;
 
     Ok(fresh_meta)
   }
@@ -154,7 +154,7 @@ impl VersionManager {
       return Ok(fresh_meta);
     }
 
-    let bytes = crate::io::read(&path).await?;
+    let bytes = crate::fs::read(&path).await?;
     let meta = serde_json::from_slice::<T>(&bytes)?;
     Ok(meta)
   }

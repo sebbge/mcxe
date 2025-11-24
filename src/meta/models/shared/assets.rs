@@ -6,16 +6,15 @@ where
   D: Deserializer<'de>,
 {
   let map: HashMap<String, RawAsset> = HashMap::deserialize(deserializer)?;
-  Ok(
-    map
-      .into_iter()
-      .map(|(path, raw)| Asset {
-        path,
-        hash: raw.hash,
-        size: raw.size,
-      })
-      .collect(),
-  )
+  let vec = map
+    .into_iter()
+    .map(|(path, raw)| Asset {
+      path,
+      hash: raw.hash,
+      size: raw.size,
+    })
+    .collect();
+  Ok(vec)
 }
 
 #[derive(Deserialize)]
