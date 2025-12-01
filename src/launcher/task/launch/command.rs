@@ -1,4 +1,4 @@
-use super::{super::TaskManager, LaunchConfig, Process};
+use super::{LaunchConfig, ProcessTask};
 
 use crate::{
   Instance,
@@ -9,7 +9,7 @@ use tokio::process::Command;
 
 pub(super) async fn build(
   instance: Instance,
-  process: &TaskManager<Process>,
+  process: &ProcessTask,
   meta: ProcessedVersionMeta,
   config: &LaunchConfig,
 ) -> crate::Result<Command> {
@@ -51,7 +51,8 @@ pub(super) async fn build(
 
 fn build_classpath(instance: &Instance, meta: &ProcessedVersionMeta) -> (String, Vec<ProcessedLibrary>) {
   let client_id = meta.inherits_from.as_ref().unwrap_or(&meta.id); // parent version id
-  let client_path = instance.client.get_path(client_id).to_string_lossy().to_string();
+  let client_path = instance.library.get_client_path(client_id);
+
   let separator = crate::platform::classpath_separator();
 
   let mut skipped_libs = Vec::new();
@@ -70,7 +71,7 @@ fn build_classpath(instance: &Instance, meta: &ProcessedVersionMeta) -> (String,
     }
   }
 
-  classpath.push(client_path);
+  classpath.push(client_path.to_string_lossy().to_string());
   (classpath.join(separator), skipped_libs)
 }
 
@@ -80,11 +81,7 @@ fn build_jvm_args(
   classpath: &str,
   config: &LaunchConfig,
 ) -> Vec<String> {
-  let natives_dir = instance
-    .library
-    .get_natives_dir(&config.id)
-    .to_string_lossy()
-    .to_string();
+  let natives_dir = instance.library.get_natives_dir(&config.id).to_string_lossy().to_string();
   let libraries_dir = instance.library.libraries_dir.to_string_lossy().to_string();
   let separator = crate::platform::classpath_separator().to_string();
   let mut variables: HashMap<&str, &str> = HashMap::from([
@@ -131,7 +128,7 @@ fn build_jvm_args(
 
 fn build_game_args(instance: &Instance, meta: &ProcessedVersionMeta, config: &LaunchConfig) -> Vec<String> {
   let token = config.token.clone().unwrap_or_else(|| String::from("0"));
-  let game_dir = instance.games_dir.join(&config.directory).to_string_lossy().to_string();
+  let game_dir = instance.instances_dir.join(&config.directory).to_string_lossy().to_string();
   let assets_dir = instance.asset.assets_dir.to_string_lossy().to_string();
 
   let mut variables = HashMap::from([
@@ -163,9 +160,6 @@ fn replace_placeholders(args: Vec<String>, variables: &mut HashMap<&str, &str>) 
 
   args
     .into_iter()
-    .map(|arg| {
-      re.replace_all(&arg, |caps: &regex::Captures| variables.get(&caps[1]).unwrap_or(&""))
-        .to_string()
-    })
+    .map(|arg| re.replace_all(&arg, |caps: &regex::Captures| variables.get(&caps[1]).unwrap_or(&"")).to_string())
     .collect()
 }

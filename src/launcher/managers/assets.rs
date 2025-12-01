@@ -10,7 +10,6 @@ impl AssetManager {
   pub fn new(assets_dir: PathBuf, assets_url: url::Url) -> Self {
     Self { assets_dir, assets_url }
   }
-  //
 
   pub async fn get_index(&self, index_meta: &AssetIndexFile) -> crate::Result<AssetIndex> {
     let index_path = self.assets_dir.join("indexes").join(format!("{}.json", &index_meta.id));
@@ -23,7 +22,6 @@ impl AssetManager {
     let fresh_index = serde_json::from_slice::<AssetIndex>(&fresh_index_bytes)?;
 
     crate::fs::write(&index_path, &fresh_index_bytes).await?;
-
     Ok(fresh_index)
   }
 
@@ -33,12 +31,9 @@ impl AssetManager {
     }
 
     let index_bytes = crate::fs::read(&index_path).await?;
-
     let index = serde_json::from_slice::<AssetIndex>(&index_bytes)?;
-
     Ok(Some(index))
   }
-  //
 
   pub async fn get_download_size(&self, index: &AssetIndex) -> u64 {
     let mut total = 0;
@@ -68,7 +63,6 @@ impl AssetManager {
       .and_then(|url| url.join(&asset.hash))
       .map_err(|_| crate::Error::Metadata(format!("Invalid asset hash: {}", &asset.hash)))?;
     let path = self.assets_dir.join("objects").join(prefix).join(&asset.hash);
-
     Ok((url.to_string(), path))
   }
 }

@@ -25,7 +25,6 @@ pub struct FullVersionMeta {
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct JavaVersion {
-  // Can be:
   // "java-runtime-alpha"
   // "java-runtime-beta"
   // "java-runtime-delta"

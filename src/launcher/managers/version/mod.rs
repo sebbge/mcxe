@@ -1,20 +1,13 @@
-mod models;
-pub use models::*;
+mod manifest;
+pub use manifest::*;
 use serde::de::DeserializeOwned;
 
-use crate::{
-  LatestVersions,
-  meta::{FullVersionMeta, PartialVersionMeta, ProcessedVersionMeta, Version, VersionManifest, VersionStatus},
-};
+use crate::LatestVersions;
+use crate::meta::{FullVersionMeta, PartialVersionMeta, ProcessedVersionMeta, Version, VersionManifest, VersionStatus};
 use indexmap::IndexMap;
-use std::{
-  path::{Path, PathBuf},
-  time::Duration,
-};
+use std::path::{Path, PathBuf};
 use url::Url;
 
-/// Version Manager
-/// todo: docs
 pub struct VersionManager {
   pub versions_dir: PathBuf,
   manifest: ManifestManager,
@@ -22,13 +15,8 @@ pub struct VersionManager {
   latest_versions: Option<LatestVersions>,
 }
 impl VersionManager {
-  pub fn new(
-    versions_dir: PathBuf,
-    manifest_url: Url,
-    manifest_path: Option<PathBuf>,
-    manifest_refresh: Option<Duration>,
-  ) -> Self {
-    let manifest = ManifestManager::new(&versions_dir, manifest_url, manifest_path, manifest_refresh);
+  pub fn new(versions_dir: PathBuf, manifest_url: Url) -> Self {
+    let manifest = ManifestManager::new(&versions_dir, manifest_url);
 
     Self {
       versions_dir,
@@ -54,7 +42,7 @@ impl VersionManager {
           version.status = VersionStatus::NeedsDownload;
           continue;
         } else {
-          //? cache
+          // cache
           // version.meta = match manifest.latest.is_latest(&version_id) {
           //   true => crate::fs::read_json::<FullVersionMeta>(&version_path)
           //     .await
@@ -168,12 +156,12 @@ impl VersionManager {
       let partial = self.read_or_fetch::<PartialVersionMeta>(version).await?;
       let full = self.read_or_fetch::<FullVersionMeta>(parent).await?;
       let meta = full.merge_and_process(partial);
-      // version.meta = Some(meta.clone());
+      //cache version.meta = Some(meta.clone());
       Ok(meta)
     } else {
       let full = self.read_or_fetch::<FullVersionMeta>(version).await?;
       let meta = full.process();
-      // version.meta = Some(meta.clone());
+      //cache version.meta = Some(meta.clone());
       Ok(meta)
     }
   }

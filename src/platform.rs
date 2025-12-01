@@ -9,7 +9,6 @@ pub fn native_classifier() -> &'static Vec<String> {
     let mut classifiers = Vec::new();
     classifiers.push(format!("natives-{}", OS));
 
-    //todo: improve this
     match (OS, ARCH) {
       ("macos", "aarch64") => {
         classifiers.push("natives-macos-arm64".into());

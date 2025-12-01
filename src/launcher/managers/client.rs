@@ -9,7 +9,6 @@ impl ClientManager {
     Self { client_dir }
   }
 
-  //
   pub async fn get_download_size(&self, client: &File, version_id: &str) -> u64 {
     let client_path = self.get_path(version_id);
     if !client_path.exists() { client.size } else { 0 }

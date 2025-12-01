@@ -4,7 +4,7 @@ use serde::Deserialize;
 #[derive(Deserialize, Debug)]
 pub struct Rule {
   pub action: Action,             // on arguments & libraries
-  pub os: Option<RuleOs>,         //only on jvm args & libraries
+  pub os: Option<RuleOs>,         // only on jvm args & libraries
   pub features: Option<Features>, // only on game args: official minecraft launcher features
 }
 
@@ -12,7 +12,7 @@ pub struct Rule {
 #[derive(Deserialize, Debug)]
 pub struct RuleOs {
   pub name: Option<RuleOsName>,
-  pub version: Option<String>, // a regex, unique on jvm args value "^10\\." //unique on libraries: "^10\\.5\\.\\d$"
+  pub version: Option<String>, // a regex, unique on jvm args "^10\\." // unique on libraries: "^10\\.5\\.\\d$"
   pub arch: Option<String>,    // architecture, unique value "x86"
 }
 

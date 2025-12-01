@@ -1,21 +1,17 @@
 use crate::meta::VersionManifest;
-use std::{
-  path::{Path, PathBuf},
-  time::Duration,
-};
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 use url::Url;
 
-/// Manifest Manager
-/// todo: docs
 pub struct ManifestManager {
   pub url: Url,
   pub path: PathBuf,
   refresh: Duration,
 }
 impl ManifestManager {
-  pub fn new(versions_dir: &Path, url: Url, path: Option<PathBuf>, refresh: Option<Duration>) -> Self {
-    let path = path.unwrap_or_else(|| versions_dir.join("version_manifest.json"));
-    let refresh = refresh.unwrap_or_else(|| Duration::from_secs(60 * 60 * 24));
+  pub fn new(versions_dir: &Path, url: Url) -> Self {
+    let path = versions_dir.join("version_manifest.json");
+    let refresh = Duration::from_secs(60 * 60 * 24);
 
     Self { url, path, refresh }
   }

@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 common = { workspace = true }
+tasked = { workspace = true }
 
 tokio = { workspace = true, features = ["process"] }
 serde = { workspace = true }
@@ -16,7 +17,6 @@ indexmap = { workspace = true }
 regex = { workspace = true }
 discordipc = { workspace = true }
 
-time = "0.3.41"
 typed-builder = "0.21.0"
 url = "2.5.4"
 

@@ -1,11 +1,24 @@
-mod models;
-use models::*;
+use crate::meta::JavaVersion;
 
+use serde::Deserialize;
 use std::env::consts::{ARCH, OS};
 use std::path::PathBuf;
 use std::{path::Path, process::Command};
 
-use crate::meta::JavaVersion;
+#[derive(Deserialize)]
+pub struct ZuluPackage {
+  // arch: String,
+  pub ext: String,
+  // java_version: Vec<u32>,
+  // latest: bool,
+  // md5_hash: String,
+  // name: String,
+  // os: String,
+  // sha256_hash: String,
+  pub size: u64,
+  // support_term: String,
+  pub url: String,
+}
 
 pub struct JavaManager {
   pub java_dir: PathBuf,

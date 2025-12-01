@@ -1,17 +1,94 @@
-mod models;
-pub use models::*;
-
 mod command;
 
-use super::TaskManager;
 use crate::{Instance, meta::ProcessedVersionMeta};
+use serde::Serialize;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Child;
 
+use tasked::{Task, TaskStatus};
+
+#[derive(typed_builder::TypedBuilder)]
+pub struct LaunchConfig {
+  #[builder(setter(into))]
+  pub(crate) id: String,
+  #[builder(setter(into))]
+  pub(crate) version: String,
+  #[builder(setter(into))]
+  pub(super) username: String,
+  #[builder(setter(into))]
+  pub(super) uuid: String,
+  #[builder(default)]
+  pub(super) token: Option<String>,
+  #[builder(setter(into))]
+  pub(super) directory: String,
+  #[builder(default)]
+  pub(super) custom_java: Option<std::path::PathBuf>,
+  #[builder(default)]
+  pub(super) extra_jvm_args: Option<Vec<String>>,
+  #[builder(default, setter(strip_option))]
+  pub(super) extra_game_args: Option<Vec<String>>,
+  #[builder(default)]
+  #[allow(dead_code)] // TODO: use check_assets field
+  pub(super) check_assets: Option<bool>,
+}
+
+// launch task
+#[derive(TaskStatus, Serialize, Default, Clone, Debug)]
+pub enum LaunchStatus {
+  #[default]
+  Pending,
+  Starting,
+  Running,
+  #[terminal]
+  Failed, // TODO: error message
+  #[terminal]
+  Aborted,
+  #[terminal]
+  Success,
+}
+#[derive(Task, Default, Clone)]
+#[tasked(status)]
+pub struct Process {
+  pub status: LaunchStatus,
+  pub is_previous: bool,
+  pub stdout: Vec<String>,
+  pub stderr: Vec<String>,
+}
+
+// private process manager
+impl ProcessTask {
+  pub async fn add_line_stdout(&self, line: String) {
+    self
+      .update(|payload| {
+        payload.stdout.push(line);
+        true
+      })
+      .await;
+  }
+
+  pub async fn add_line_stderr(&self, line: String) {
+    self
+      .update(|payload| {
+        payload.stderr.push(line);
+        true
+      })
+      .await;
+  }
+
+  pub async fn set_playing(&self) {
+    self
+      .update(|payload| {
+        payload.status.set_running();
+        true
+      })
+      .await;
+  }
+}
+
 pub(crate) async fn launch_game(
   instance: Instance,
-  process: TaskManager<Process>,
+  process: ProcessTask,
   meta: ProcessedVersionMeta,
   config: LaunchConfig,
 ) {
@@ -19,7 +96,8 @@ pub(crate) async fn launch_game(
     Ok(cmd) => cmd,
     Err(e) => {
       tracing::error!("{}", e);
-      process.fail(e.to_string()).await;
+      // TODO: error message
+      process.failed().await;
       return;
     }
   };
@@ -32,7 +110,8 @@ pub(crate) async fn launch_game(
     Ok(child) => child,
     Err(e) => {
       tracing::error!("Failed to execute Minecraft process: {}", e);
-      process.fail(e.to_string()).await;
+      // TODO: error message
+      process.failed().await;
       return;
     }
   };
@@ -42,7 +121,7 @@ pub(crate) async fn launch_game(
   tokio::spawn(watch_process(process, child));
 }
 
-async fn watch_process(process: TaskManager<Process>, mut child: Child) {
+async fn watch_process(process: ProcessTask, mut child: Child) {
   if let Some(stdout) = child.stdout.take() {
     let process = process.clone();
 
@@ -88,13 +167,14 @@ async fn watch_process(process: TaskManager<Process>, mut child: Child) {
           process.success().await;
         } else {
           tracing::error!("game exited with an error");
-          process.abort().await;
+          process.aborted().await;
         }
         break;
       }
       Err(e) => {
         tracing::error!("Error while waiting for Minecraft process: {e}");
-        process.fail(e.to_string()).await;
+        // TODO: error message
+        process.failed().await;
         break;
       }
     }

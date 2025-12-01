@@ -1,36 +1,34 @@
-use super::{super::TaskManager, Download};
+use super::{DownloadTask};
 use crate::Instance;
 
-pub(crate) fn download_java(instance: Instance, download: TaskManager<Download>, version: u16) {
+pub(crate) fn download_java(instance: Instance, download: DownloadTask, version: u16) {
   tokio::spawn(async move {
     let download_result: crate::Result<Option<()>> = async {
-      //- Meta
       let package = instance.java.fetch_java_package(&version).await?;
+      let message = format!("Java {}", &version);
+
       download.set_total(package.size).await;
+      download.set_message(&message).await;
       download.start().await;
 
-      //- Download
       let jre_name = format!("jre-{}", version);
       let jre_dir = instance.java.java_dir.join(&jre_name);
       let zip_path = jre_dir.with_extension(package.ext);
 
-      let jre_response = crate::net::get(&package.url).await?;
-
+      let jre_res = crate::net::get(&package.url).await?;
       crate::util::stream_to_file::<_, crate::Error>(
-        jre_response,
+        jre_res,
         &zip_path,
         || download.was_aborted(),
-        |size| download.add_bytes(size, ""),
+        |size| download.add_progress(size as u64),
       )
       .await?;
 
-      //- Install
       use std::io::Read;
       #[cfg(unix)]
       use std::os::unix::fs::PermissionsExt;
 
       download.set_installing().await;
-      download.set_message("Extracting Java Runtime Environment").await;
       crate::fs::zip::for_each(&zip_path, |mut file| {
         let mut path_parts = file.name().splitn(2, '/');
         let _ = path_parts.next();
@@ -51,9 +49,7 @@ pub(crate) fn download_java(instance: Instance, download: TaskManager<Download>,
           }
 
           let mut bytes = Vec::with_capacity(file.size() as usize);
-          file
-            .read_to_end(&mut bytes)
-            .map_err(|e| crate::fs::IoError::from_io(e, &zip_path))?;
+          file.read_to_end(&mut bytes).map_err(|e| crate::fs::IoError::from_io(e, &zip_path))?;
 
           crate::fs::write_sync(&out_path, &bytes)?;
 
@@ -74,9 +70,10 @@ pub(crate) fn download_java(instance: Instance, download: TaskManager<Download>,
     .await;
 
     match download_result {
-      Ok(None) => download.abort().await,
+      Ok(None) => download.aborted().await,
       Ok(Some(())) => download.success().await,
-      Err(e) => download.fail(e.to_string()).await,
+      // TODO: error message
+      Err(_e) => download.failed().await,
     };
   });
 }
