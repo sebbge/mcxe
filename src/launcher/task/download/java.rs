@@ -1,4 +1,4 @@
-use super::{DownloadTask};
+use super::DownloadTask;
 use crate::Instance;
 
 pub(crate) fn download_java(instance: Instance, download: DownloadTask, version: u16) {
@@ -20,7 +20,7 @@ pub(crate) fn download_java(instance: Instance, download: DownloadTask, version:
         jre_res,
         &zip_path,
         || download.was_aborted(),
-        |size| download.add_progress(size as u64),
+        |size| download.add_progress_msg(size as u64, &message),
       )
       .await?;
 
@@ -72,8 +72,10 @@ pub(crate) fn download_java(instance: Instance, download: DownloadTask, version:
     match download_result {
       Ok(None) => download.aborted().await,
       Ok(Some(())) => download.success().await,
-      // TODO: error message
-      Err(_e) => download.failed().await,
+      Err(e) => {
+        download.set_error_message(e.to_string()).await;
+        download.failed().await
+      }
     };
   });
 }

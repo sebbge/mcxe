@@ -41,7 +41,7 @@ pub enum LaunchStatus {
   Starting,
   Running,
   #[terminal]
-  Failed, // TODO: error message
+  Failed,
   #[terminal]
   Aborted,
   #[terminal]
@@ -49,15 +49,15 @@ pub enum LaunchStatus {
 }
 #[derive(Task, Default, Clone)]
 #[tasked(status)]
-pub struct Process {
+pub struct Launch {
   pub status: LaunchStatus,
   pub is_previous: bool,
   pub stdout: Vec<String>,
   pub stderr: Vec<String>,
 }
 
-// private process manager
-impl ProcessTask {
+// private launch manager
+impl LaunchTask {
   pub async fn add_line_stdout(&self, line: String) {
     self
       .update(|payload| {
@@ -88,7 +88,7 @@ impl ProcessTask {
 
 pub(crate) async fn launch_game(
   instance: Instance,
-  process: ProcessTask,
+  process: LaunchTask,
   meta: ProcessedVersionMeta,
   config: LaunchConfig,
 ) {
@@ -96,7 +96,6 @@ pub(crate) async fn launch_game(
     Ok(cmd) => cmd,
     Err(e) => {
       tracing::error!("{}", e);
-      // TODO: error message
       process.failed().await;
       return;
     }
@@ -110,7 +109,6 @@ pub(crate) async fn launch_game(
     Ok(child) => child,
     Err(e) => {
       tracing::error!("Failed to execute Minecraft process: {}", e);
-      // TODO: error message
       process.failed().await;
       return;
     }
@@ -121,7 +119,7 @@ pub(crate) async fn launch_game(
   tokio::spawn(watch_process(process, child));
 }
 
-async fn watch_process(process: ProcessTask, mut child: Child) {
+async fn watch_process(process: LaunchTask, mut child: Child) {
   if let Some(stdout) = child.stdout.take() {
     let process = process.clone();
 
@@ -173,7 +171,6 @@ async fn watch_process(process: ProcessTask, mut child: Child) {
       }
       Err(e) => {
         tracing::error!("Error while waiting for Minecraft process: {e}");
-        // TODO: error message
         process.failed().await;
         break;
       }

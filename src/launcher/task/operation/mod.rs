@@ -11,7 +11,7 @@ pub enum ProgressStatus {
   Pending,
   Running,
   #[terminal]
-  Failed, // TODO: error message
+  Failed,
   #[terminal]
   Aborted,
   #[terminal]
@@ -27,6 +27,7 @@ pub struct Progress {
   pub total: u64,
   pub progress: u8, // (0 - 100)
   pub message: String,
+  pub error_message: String,
   pub out: Option<String>,
 }
 
@@ -36,6 +37,15 @@ impl ProgressTask {
     self
       .update(|payload| {
         payload.message = message.into();
+        true
+      })
+      .await;
+  }
+
+  pub async fn set_error_message(&self, message: impl Into<String>) {
+    self
+      .update(|payload| {
+        payload.error_message = message.into();
         true
       })
       .await;

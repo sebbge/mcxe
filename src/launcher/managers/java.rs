@@ -28,15 +28,17 @@ impl JavaManager {
     Self { java_dir }
   }
   //
-  pub fn get_java(&self, version: &Option<JavaVersion>) -> crate::Result<(Option<PathBuf>, u16)> {
+  pub fn get_java(&self, version: &Option<JavaVersion>) -> crate::Result<(PathBuf, u16)> {
     let major_version = version.as_ref().map(|j| j.major_version).unwrap_or(21);
     let java_path = self.get_java_path(&major_version);
 
     if !self.test_java(&java_path)? {
-      return Ok((None, major_version));
-    }
+      //todo: java is unavailable, maybe delete or notify user
+      let e = std::io::Error::other("Java is unavailable");
+      return Err(crate::fs::IoError::from_io(e, &java_path).into());
+    };
 
-    Ok((Some(java_path), major_version))
+    Ok((java_path, major_version))
   }
 
   fn get_java_path(&self, version: &u16) -> PathBuf {

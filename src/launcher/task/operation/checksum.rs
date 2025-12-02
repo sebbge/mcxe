@@ -1,4 +1,4 @@
-use super::{ProgressTask};
+use super::ProgressTask;
 use crate::{Instance, meta::ProcessedVersionMeta};
 
 use serde::Serialize;
@@ -14,12 +14,7 @@ pub struct ChecksumReport {
   download_required: bool,
 }
 
-pub(crate) fn checksum(
-  instance: Instance,
-  progress: ProgressTask,
-  meta: ProcessedVersionMeta,
-  check_assets: bool,
-) {
+pub(crate) fn checksum(instance: Instance, progress: ProgressTask, meta: ProcessedVersionMeta, check_assets: bool) {
   tokio::spawn(async move {
     let checksum_result: crate::Result<Option<ChecksumReport>> = async {
       let mut rep = ChecksumReport::default();
@@ -119,8 +114,10 @@ pub(crate) fn checksum(
         progress.set_out(out).await;
         progress.success().await;
       }
-      // TODO: error message
-      Err(_e) => progress.failed().await,
+      Err(e) => {
+        progress.set_error_message(e.to_string()).await;
+        progress.failed().await
+      }
     };
   });
 }

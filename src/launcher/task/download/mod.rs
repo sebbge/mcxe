@@ -23,7 +23,7 @@ pub enum DownloadStatus {
   Downloading,
   Installing,
   #[terminal]
-  Failed, // TODO: error message
+  Failed,
   #[terminal]
   Aborted,
   #[terminal]
@@ -39,6 +39,7 @@ pub struct Download {
   pub total: u64,   // total bytes
   pub progress: u8, // 0-100
   pub message: String,
+  pub error_message: String,
 }
 
 // private download manager
@@ -48,6 +49,33 @@ impl DownloadTask {
       .update(|payload| {
         payload.message = message.into();
         true
+      })
+      .await;
+  }
+
+  pub async fn set_error_message(&self, message: impl Into<String>) {
+    self
+      .update(|payload| {
+        payload.error_message = message.into();
+        true
+      })
+      .await;
+  }
+
+  pub async fn add_progress_msg(&self, amount: u64, message: impl Into<String>) {
+    use tasked::Progress;
+    self
+      .update(|payload| {
+        let prev_progress = payload.progress();
+
+        let new_current = payload.current().saturating_add(amount).min(payload.total());
+        payload.set_current(new_current);
+
+        let new_progress = payload.calc_progress();
+        payload.set_progress(new_progress);
+        payload.message = message.into();
+
+        prev_progress < new_progress
       })
       .await;
   }

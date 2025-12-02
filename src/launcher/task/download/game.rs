@@ -43,10 +43,7 @@ pub(crate) fn download_game(instance: Instance, download: DownloadTask, meta: Pr
           Ok(DownloadResult::Ignored) => existing_libs.push(lib),
           Ok(DownloadResult::Impossible) => ignored_libs.push(lib), //? Impossible to download (no url).
           Err(e) => {
-            return Err(crate::Error::Download(format!(
-              "Couldn't download library {}: {}",
-              lib.name, e
-            )));
+            return Err(crate::Error::Download(format!("Couldn't download library {}: {}", lib.name, e)));
           }
         }
       }
@@ -64,10 +61,7 @@ pub(crate) fn download_game(instance: Instance, download: DownloadTask, meta: Pr
           Ok(DownloadResult::Ignored) => existing_assets.push(asset),
           Ok(DownloadResult::Impossible) => (),
           Err(e) => {
-            return Err(crate::Error::Download(format!(
-              "Couldn't download asset {}: {}",
-              asset.hash, e
-            )));
+            return Err(crate::Error::Download(format!("Couldn't download asset {}: {}", asset.hash, e)));
           }
         }
       }
@@ -81,10 +75,7 @@ pub(crate) fn download_game(instance: Instance, download: DownloadTask, meta: Pr
         Ok(DownloadResult::Ignored) => (),
         Ok(DownloadResult::Impossible) => (),
         Err(e) => {
-          return Err(crate::Error::Download(format!(
-            "Couldn't download game client for {}: {}",
-            &meta.id, e
-          )));
+          return Err(crate::Error::Download(format!("Couldn't download game client for {}: {}", &meta.id, e)));
         }
       };
 
@@ -95,8 +86,10 @@ pub(crate) fn download_game(instance: Instance, download: DownloadTask, meta: Pr
     match download_result {
       Ok(None) => download.aborted().await,
       Ok(Some(())) => download.success().await,
-      // TODO: error message
-      Err(_e) => download.failed().await,
+      Err(e) => {
+        download.set_error_message(e.to_string()).await;
+        download.failed().await
+      }
     };
   });
 }
@@ -147,8 +140,7 @@ fn build_lib_tasks(
         crate::fs::write(&path, &bytes).await?;
         drop(io_permit);
 
-        download.set_message(&lib.path).await;
-        download.add_progress(bytes.len() as u64).await;
+        download.add_progress_msg(bytes.len() as u64, &lib.path).await;
 
         Ok(DownloadResult::Success)
       }
@@ -188,8 +180,7 @@ fn build_asset_tasks(instance: &Instance, download: &DownloadTask, index: AssetI
         crate::fs::write(&path, &bytes).await?;
         drop(io_permit);
 
-        download.set_message(&asset.path).await;
-        download.add_progress(bytes.len() as u64).await;
+        download.add_progress_msg(bytes.len() as u64, &asset.path).await;
 
         Ok(DownloadResult::Success)
       }
@@ -225,7 +216,7 @@ fn build_client_task(instance: &Instance, download: &DownloadTask, client: File,
         jar_res,
         &path,
         || download.was_aborted(),
-        |size| download.add_progress(size as u64),
+        |size| download.add_progress_msg(size as u64, &message),
       )
       .await?;
 

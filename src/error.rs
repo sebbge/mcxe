@@ -14,9 +14,6 @@ pub enum Error {
   #[error("Metadata error: {0}")]
   Metadata(String),
 
-  #[error("Launcher error: {0}")]
-  Launcher(String),
-
   #[error("Download error: {0}")]
   Download(String),
 }

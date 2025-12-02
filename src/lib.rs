@@ -1,5 +1,5 @@
 use common::{fs, net, util};
-use tasked::TaskHandle;
+pub use tasked::{TaskData, TaskHandle};
 
 mod error;
 pub use error::Error;
@@ -15,7 +15,14 @@ pub use meta::{LatestVersions, Version, VersionStatus, VersionType};
 
 use std::{path::Path, sync::Arc};
 
-#[derive(Clone)]
+pub type DownloadHandle = TaskHandle<Download>;
+pub type LaunchHandle = TaskHandle<Launch>;
+pub type ProgressHandle = TaskHandle<Progress>;
+pub type DownloadData = TaskData<Download>;
+pub type ProcessData = TaskData<Launch>;
+pub type ProgressData = TaskData<Progress>;
+
+#[derive(Default, Clone)]
 pub struct Launcher(Instance);
 impl Launcher {
   pub fn new(config: LauncherConfig) -> Self {
@@ -47,21 +54,15 @@ impl Launcher {
   }
   //
 
-  pub async fn download(
-    &self,
-    version_id: &str,
-  ) -> crate::Result<(Option<TaskHandle<Download>>, TaskHandle<Download>)> {
-    let instance = Arc::clone(&self.0);
-    self.0.download(instance, version_id).await
+  pub async fn download(&self, version_id: &str) -> Result<(Option<DownloadHandle>, DownloadHandle)> {
+    self.0.download(Arc::clone(&self.0), version_id).await
   }
 
-  pub async fn launch(&self, config: LaunchConfig) -> crate::Result<TaskHandle<Process>> {
-    let instance = Arc::clone(&self.0);
-    self.0.launch(instance, config).await
+  pub async fn launch(&self, config: LaunchConfig) -> Result<LaunchHandle> {
+    self.0.launch(Arc::clone(&self.0), config).await
   }
 
-  pub async fn checksum(&self, version_id: &str) -> crate::Result<TaskHandle<Progress>> {
-    let instance = Arc::clone(&self.0);
-    self.0.checksum(instance, version_id).await
+  pub async fn checksum(&self, version_id: &str) -> Result<ProgressHandle> {
+    self.0.checksum(Arc::clone(&self.0), version_id).await
   }
 }

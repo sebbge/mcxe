@@ -1,4 +1,4 @@
-use super::{LaunchConfig, ProcessTask};
+use super::{LaunchConfig, LaunchTask};
 
 use crate::{
   Instance,
@@ -9,7 +9,7 @@ use tokio::process::Command;
 
 pub(super) async fn build(
   instance: Instance,
-  process: &ProcessTask,
+  process: &LaunchTask,
   meta: ProcessedVersionMeta,
   config: &LaunchConfig,
 ) -> crate::Result<Command> {
@@ -17,7 +17,7 @@ pub(super) async fn build(
     custom.clone()
   } else {
     let (path, _) = instance.java.get_java(&meta.java_version)?;
-    path.ok_or_else(|| crate::Error::Launcher("Java is unavailable".into()))?
+    path
   };
 
   for native in meta.libraries.iter().filter(|l| l.is_native && !l.must_skip) {

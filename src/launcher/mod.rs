@@ -1,9 +1,10 @@
+use crate::{DownloadHandle, LaunchHandle, ProgressHandle, Result};
+
 mod builder;
 pub use builder::{LauncherConfig, LauncherConfigBuilder};
 
 mod task;
 pub use task::*;
-use tasked::TaskHandle;
 
 mod managers;
 use managers::*;
@@ -24,7 +25,6 @@ pub(crate) struct InnerLauncher {
   net_s: Arc<Semaphore>,
   io_s: Arc<Semaphore>,
 }
-
 impl InnerLauncher {
   pub fn new(c: LauncherConfig) -> Self {
     let instances_dir = c.root_dir.join("instances");
@@ -57,7 +57,7 @@ impl InnerLauncher {
     }
   }
 
-  pub async fn init(&self) -> crate::Result<()> {
+  pub async fn init(&self) -> Result<()> {
     for dir in [
       &self.root_dir,
       &self.instances_dir,
@@ -78,21 +78,20 @@ impl InnerLauncher {
     &self,
     instance: Instance,
     version_id: &str,
-  ) -> crate::Result<(Option<TaskHandle<Download>>, TaskHandle<Download>)> {
+  ) -> Result<(Option<DownloadHandle>, DownloadHandle)> {
     let meta = instance.version.read().await.meta(version_id).await?;
 
     //= JAVA
-    let (path_to_java, java_version) = instance.java.get_java(&meta.java_version)?;
-    let java_handle = if path_to_java.is_none() {
-      let id = format!("jre-{}:{}", java_version, &version_id);
+    let java_handle = match instance.java.get_java(&meta.java_version) {
+      Ok(_) => None,
+      Err(_) => {
+        let java_version = meta.java_version.as_ref().map(|j| j.major_version).unwrap_or(21);
+        let id = format!("jre-{}:{}", java_version, &version_id);
 
-      let (download, handle) = DownloadTask::new(id).await;
-
-      download_java(Arc::clone(&instance), download, java_version);
-
-      Some(handle)
-    } else {
-      None
+        let (download, handle) = DownloadTask::new(id).await;
+        download_java(Arc::clone(&instance), download, java_version);
+        Some(handle)
+      }
     };
 
     //= GAME
@@ -101,19 +100,24 @@ impl InnerLauncher {
     Ok((java_handle, mc_handle))
   }
 
-  pub async fn launch(&self, instance: Instance, config: LaunchConfig) -> crate::Result<TaskHandle<Process>> {
+  pub async fn launch(&self, instance: Instance, config: LaunchConfig) -> Result<LaunchHandle> {
     let meta = instance.version.read().await.meta(&config.version).await?;
 
-    let (launch, handle) = ProcessTask::new(&config.id).await;
+    let (launch, handle) = LaunchTask::new(&config.id).await;
     launch_game(instance, launch, meta, config).await;
     Ok(handle)
   }
 
-  pub async fn checksum(&self, instance: Instance, version_id: &str) -> crate::Result<TaskHandle<Progress>> {
+  pub async fn checksum(&self, instance: Instance, version_id: &str) -> Result<ProgressHandle> {
     let meta = instance.version.read().await.meta(version_id).await?;
 
     let (progress, handle) = ProgressTask::new(version_id).await;
     checksum(instance, progress, meta, false);
     Ok(handle)
+  }
+}
+impl Default for InnerLauncher {
+  fn default() -> Self {
+    Self::new(LauncherConfig::default())
   }
 }
