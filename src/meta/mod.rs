@@ -1,6 +1,7 @@
-#![allow(dead_code)]
 mod models;
 pub use models::*;
+
+pub mod platform;
 
 use std::collections::HashMap;
 use url::Url;
@@ -65,11 +66,7 @@ impl ProcessedVersionMeta {
 
   /// Processes a `FullVersionMeta` into a `ProcessedVersionMeta`.
   fn process(meta: FullVersionMeta, parent_id: Option<String>) -> ProcessedVersionMeta {
-    let libraries = meta
-      .libraries
-      .into_iter()
-      .flat_map(|lib| lib.process_library())
-      .collect::<Vec<ProcessedLibrary>>();
+    let libraries = meta.libraries.into_iter().flat_map(|lib| lib.process_library()).collect::<Vec<ProcessedLibrary>>();
 
     let mut arguments = meta.arguments.map(|args| args.process_arguments()).unwrap_or_default();
 
@@ -110,14 +107,6 @@ impl Rule {
       && os_name.as_str() != std::env::consts::OS
     {
       return None;
-
-      // if let Some(arch) = &os_rule.arch {
-      //   if arch != std::env::consts::ARCH {
-      //     return None;
-      //   }
-      // }
-
-      //- If there is not OS or ARCH, the rule applies for all systems.
     }
 
     if let Some(_feature_rule) = &self.features {
@@ -249,29 +238,20 @@ impl Library {
     let parts: Vec<&str> = self.name.split(':').collect();
 
     if parts.len() < 3 {
-      return Err(crate::Error::Metadata(format!(
-        "Invalid library name format: {}",
-        &self.name
-      )));
+      return Err(crate::Error::Metadata(format!("Invalid library name format: {}", self.name)));
     }
 
     let (group, name, version, classifier_ext) = match parts.as_slice() {
       [g, n, v] => (g.to_string(), n.to_string(), v.to_string(), None),
       [g, n, v, c] => (g.to_string(), n.to_string(), v.to_string(), Some(c.to_string())),
       _ => {
-        return Err(crate::Error::Metadata(format!(
-          "Invalid library name format: {}",
-          &self.name
-        )));
+        return Err(crate::Error::Metadata(format!("Invalid library name format: {}", self.name)));
       }
     };
 
     let (classifier, ext) = if let Some(raw) = classifier_ext {
       let mut split = raw.split('@');
-      (
-        split.next().map(|s| s.to_string()),
-        split.next().unwrap_or("jar").to_string(),
-      )
+      (split.next().map(|s| s.to_string()), split.next().unwrap_or("jar").to_string())
     } else {
       (None, "jar".to_string())
     };
@@ -284,25 +264,8 @@ impl Library {
     let (group, name, version, classifier, ext) = self.parse_lib_name()?;
 
     let path = match classifier {
-      Some(c) => format!(
-        "{}/{}/{}/{}-{}-{}.{}",
-        group.replace('.', "/"),
-        name,
-        version,
-        name,
-        version,
-        c,
-        ext
-      ),
-      None => format!(
-        "{}/{}/{}/{}-{}.{}",
-        group.replace('.', "/"),
-        name,
-        version,
-        name,
-        version,
-        ext
-      ),
+      Some(c) => format!("{}/{}/{}/{}-{}-{}.{}", group.replace('.', "/"), name, version, name, version, c, ext),
+      None => format!("{}/{}/{}/{}-{}.{}", group.replace('.', "/"), name, version, name, version, ext),
     };
 
     Ok(path)
@@ -310,7 +273,7 @@ impl Library {
 
   /// Determines whether a native library should be skipped based on this system.
   fn must_skip_native(native_lib_name: &str) -> bool {
-    let classifiers = crate::platform::native_classifier();
+    let classifiers = crate::meta::platform::native_classifier();
     !classifiers.iter().any(|suffix| native_lib_name.ends_with(suffix))
   }
 }

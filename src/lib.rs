@@ -1,11 +1,11 @@
-use common::{fs, net, util};
-pub use tasked::{TaskData, TaskHandle};
+mod fs;
+pub mod net;
+mod util;
+pub use taskee::{TaskData, TaskHandle};
 
 mod error;
 pub use error::Error;
 pub type Result<T> = std::result::Result<T, Error>;
-
-mod platform;
 
 mod launcher;
 pub use launcher::*;
@@ -55,14 +55,14 @@ impl Launcher {
   //
 
   pub async fn download(&self, version_id: &str) -> Result<(Option<DownloadHandle>, DownloadHandle)> {
-    self.0.download(Arc::clone(&self.0), version_id).await
+    Arc::clone(&self.0).download(version_id).await
   }
 
   pub async fn launch(&self, config: LaunchConfig) -> Result<LaunchHandle> {
-    self.0.launch(Arc::clone(&self.0), config).await
+    Arc::clone(&self.0).launch(config).await
   }
 
-  pub async fn checksum(&self, version_id: &str) -> Result<ProgressHandle> {
-    self.0.checksum(Arc::clone(&self.0), version_id).await
+  pub async fn checksum(&self, version_id: &str, check_assets: bool) -> Result<ProgressHandle> {
+    Arc::clone(&self.0).checksum(version_id, check_assets).await
   }
 }

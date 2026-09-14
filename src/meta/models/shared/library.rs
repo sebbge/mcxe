@@ -35,12 +35,14 @@ pub struct LibraryDownloads {
   pub classifiers: HashMap<String, File>,
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize, Debug, Clone)]
 pub struct LibraryExtract {
   pub exclude: Vec<String>, // always ["META-INF/"]
 }
 
 // Natives
+#[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 pub struct LibraryNatives {
   // "linux-x86_64"

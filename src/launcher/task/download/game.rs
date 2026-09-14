@@ -1,11 +1,12 @@
-use super::{DownloadJob, DownloadResult, DownloadTask};
+use super::{DownloadJob, DownloadResult, DownloadStatusExt, DownloadTask};
 use crate::Instance;
 use crate::meta::{Asset, AssetIndex, File, ProcessedLibrary, ProcessedVersionMeta};
+use futures::FutureExt;
 use futures::future;
 
 pub(crate) fn download_game(instance: Instance, download: DownloadTask, meta: ProcessedVersionMeta) {
   tokio::spawn(async move {
-    let download_result: crate::Result<Option<()>> = async {
+    let download_result: crate::Result<Option<()>> = std::panic::AssertUnwindSafe(async {
       // meta
       let libraries = meta.libraries;
       let asset_index = instance.asset.get_index(&meta.asset_index).await?;
@@ -15,33 +16,23 @@ pub(crate) fn download_game(instance: Instance, download: DownloadTask, meta: Pr
       let assets_size = instance.asset.get_download_size(&asset_index).await;
       let client_size = instance.library.get_client_download_size(&client, &meta.id).await;
       let total = libraries_size.saturating_add(assets_size).saturating_add(client_size);
+
       if total == 0 {
         return Ok(Some(()));
       }
 
-      download.set_total(total).await;
-      download.start().await;
+      download.set_total(total);
+      download.set_downloading();
+      download.start();
 
       // libs
-      let (lib_tasks, _skipped_libs) = build_lib_tasks(&instance, &download, libraries);
+      let lib_tasks = build_lib_tasks(&instance, &download, libraries);
       let lib_results = future::try_join_all(lib_tasks).await.map_err(|e| crate::Error::Download(e.to_string()))?;
 
-      let mut existing_libs = Vec::new();
-      let mut new_libs = Vec::new();
-      let mut ignored_libs = Vec::new();
-      let mut must_extract = Vec::new();
       for (lib, result) in lib_results {
         match result {
           Ok(DownloadResult::Cancelled) => return Ok(None),
-          Ok(DownloadResult::Success) => {
-            if lib.is_native {
-              must_extract.push(lib);
-            } else {
-              new_libs.push(lib);
-            }
-          }
-          Ok(DownloadResult::Ignored) => existing_libs.push(lib),
-          Ok(DownloadResult::Impossible) => ignored_libs.push(lib), //? Impossible to download (no url).
+          Ok(_) => {}
           Err(e) => {
             return Err(crate::Error::Download(format!("Couldn't download library {}: {}", lib.name, e)));
           }
@@ -52,14 +43,10 @@ pub(crate) fn download_game(instance: Instance, download: DownloadTask, meta: Pr
       let asset_tasks = build_asset_tasks(&instance, &download, asset_index);
       let asset_results = future::try_join_all(asset_tasks).await.map_err(|e| crate::Error::Download(e.to_string()))?;
 
-      let mut new_assets = Vec::new();
-      let mut existing_assets = Vec::new();
       for (asset, result) in asset_results {
         match result {
           Ok(DownloadResult::Cancelled) => return Ok(None),
-          Ok(DownloadResult::Success) => new_assets.push(asset),
-          Ok(DownloadResult::Ignored) => existing_assets.push(asset),
-          Ok(DownloadResult::Impossible) => (),
+          Ok(_) => {}
           Err(e) => {
             return Err(crate::Error::Download(format!("Couldn't download asset {}: {}", asset.hash, e)));
           }
@@ -75,20 +62,31 @@ pub(crate) fn download_game(instance: Instance, download: DownloadTask, meta: Pr
         Ok(DownloadResult::Ignored) => (),
         Ok(DownloadResult::Impossible) => (),
         Err(e) => {
-          return Err(crate::Error::Download(format!("Couldn't download game client for {}: {}", &meta.id, e)));
+          return Err(crate::Error::Download(format!("Couldn't download game client for {}: {}", meta.id, e)));
         }
       };
 
       Ok(Some(()))
-    }
-    .await;
+    })
+    .catch_unwind()
+    .await
+    .unwrap_or_else(|panic| {
+      let msg = if let Some(s) = panic.downcast_ref::<&str>() {
+        (*s).to_string()
+      } else if let Some(s) = panic.downcast_ref::<String>() {
+        s.clone()
+      } else {
+        "unknown panic payload".to_string()
+      };
+      Err(crate::Error::Download(format!("download_game panicked: {msg}")))
+    });
 
     match download_result {
-      Ok(None) => download.aborted().await,
-      Ok(Some(())) => download.success().await,
+      Ok(None) => download.aborted(),
+      Ok(Some(())) => download.success(),
       Err(e) => {
-        download.set_error_message(e.to_string()).await;
-        download.failed().await
+        download.set_error_message(e.to_string());
+        download.failed()
       }
     };
   });
@@ -98,13 +96,11 @@ fn build_lib_tasks(
   instance: &Instance,
   download: &DownloadTask,
   libraries: Vec<ProcessedLibrary>,
-) -> (Vec<DownloadJob<ProcessedLibrary>>, Vec<ProcessedLibrary>) {
-  let mut skipped = Vec::new();
+) -> Vec<DownloadJob<ProcessedLibrary>> {
   let mut tasks = Vec::new();
 
   for lib in libraries {
     if lib.must_skip {
-      skipped.push(lib);
       continue;
     }
 
@@ -112,14 +108,26 @@ fn build_lib_tasks(
     let download = download.clone();
     tasks.push(tokio::spawn(async move {
       let result = async {
-        if download.was_aborted() {
+        if download.is_aborted() {
           return Ok(DownloadResult::Cancelled);
         }
 
         let path = instance.library.get_lib_path(&lib);
         if path.exists() {
-          return Ok(DownloadResult::Ignored);
-        };
+          let mut valid = true;
+          if let Some(expected_sha1) = lib.sha1.as_deref() {
+            valid = crate::fs::is_valid_sha1(&path, expected_sha1).await?;
+          } else if let Some(expected_size) = lib.size {
+            let metadata = tokio::fs::metadata(&path).await.map_err(|e| crate::fs::IoError::from_io(e, &path))?;
+            valid = metadata.len() == expected_size;
+          }
+
+          if valid {
+            return Ok(DownloadResult::Ignored);
+          }
+
+          crate::fs::delete_file(&path).await.ok();
+        }
 
         let url = match &lib.url {
           Some(url) => url,
@@ -131,16 +139,15 @@ fn build_lib_tasks(
         };
 
         let net_permit = instance.net_s.clone().acquire_owned().await.unwrap();
-        download.set_message(&lib.path).await;
+        download.set_message(&lib.path);
         let bytes = crate::net::get_bytes(url).await?;
         drop(net_permit);
 
         let io_permit = instance.io_s.clone().acquire_owned().await.unwrap();
-        // download.set_message(&lib.path);
         crate::fs::write(&path, &bytes).await?;
         drop(io_permit);
 
-        download.add_progress_msg(bytes.len() as u64, &lib.path).await;
+        download.add_progress_msg(bytes.len() as u64, &lib.path);
 
         Ok(DownloadResult::Success)
       }
@@ -150,7 +157,7 @@ fn build_lib_tasks(
     }));
   }
 
-  (tasks, skipped)
+  tasks
 }
 
 fn build_asset_tasks(instance: &Instance, download: &DownloadTask, index: AssetIndex) -> Vec<DownloadJob<Asset>> {
@@ -161,26 +168,31 @@ fn build_asset_tasks(instance: &Instance, download: &DownloadTask, index: AssetI
     let download = download.clone();
     tasks.push(tokio::spawn(async move {
       let result = async {
-        if download.was_aborted() {
+        if download.is_aborted() {
           return Ok(DownloadResult::Cancelled);
         }
 
         let (url, path) = instance.asset.get_asset_url_and_path(&asset)?;
+
         if path.exists() {
-          return Ok(DownloadResult::Ignored);
-        };
+          let valid = crate::fs::is_valid_sha1(&path, &asset.hash).await?;
+          if valid {
+            return Ok(DownloadResult::Ignored);
+          }
+
+          crate::fs::delete_file(&path).await.ok();
+        }
 
         let net_permit = instance.net_s.clone().acquire_owned().await.unwrap();
-        download.set_message(&asset.path).await;
+        download.set_message(&asset.path);
         let bytes = crate::net::get_bytes(&url).await?;
         drop(net_permit);
 
         let io_permit = instance.io_s.clone().acquire_owned().await.unwrap();
-        // download.await.set_message(&asset.path);
         crate::fs::write(&path, &bytes).await?;
         drop(io_permit);
 
-        download.add_progress_msg(bytes.len() as u64, &asset.path).await;
+        download.add_progress_msg(bytes.len() as u64, &asset.path);
 
         Ok(DownloadResult::Success)
       }
@@ -199,23 +211,29 @@ fn build_client_task(instance: &Instance, download: &DownloadTask, client: File,
   let download = download.clone();
   tokio::spawn(async move {
     let result = async {
-      if download.was_aborted() {
+      if download.is_aborted() {
         return Ok(DownloadResult::Cancelled);
       }
 
       let path = instance.library.get_client_path(&v_id);
-      if path.exists() {
-        return Ok(DownloadResult::Ignored);
-      };
 
-      let message = format!("{}.jar", &v_id);
-      download.set_message(&message).await;
+      if path.exists() {
+        let valid = crate::fs::is_valid_sha1(&path, &client.sha1).await?;
+        if valid {
+          return Ok(DownloadResult::Ignored);
+        }
+
+        crate::fs::delete_file(&path).await.ok();
+      }
+
+      let message = format!("{}.jar", v_id);
+      download.set_message(&message);
 
       let jar_res = crate::net::get(&client.url).await?;
-      crate::util::stream_to_file::<_, crate::Error>(
+      crate::util::stream_to_file::<crate::Error>(
         jar_res,
         &path,
-        || download.was_aborted(),
+        || download.is_aborted(),
         |size| download.add_progress_msg(size as u64, &message),
       )
       .await?;

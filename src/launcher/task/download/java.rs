@@ -1,26 +1,26 @@
-use super::DownloadTask;
+use super::{DownloadStatusExt, DownloadTask};
 use crate::Instance;
 
 pub(crate) fn download_java(instance: Instance, download: DownloadTask, version: u16) {
   tokio::spawn(async move {
     let download_result: crate::Result<Option<()>> = async {
       let package = instance.java.fetch_java_package(&version).await?;
-      let message = format!("Java {}", &version);
 
-      download.set_total(package.size).await;
-      download.set_message(&message).await;
-      download.start().await;
+      download.set_total(package.size);
+      download.set_downloading();
+      download.set_message(format!("Java {version}"));
+      download.start();
 
       let jre_name = format!("jre-{}", version);
       let jre_dir = instance.java.java_dir.join(&jre_name);
       let zip_path = jre_dir.with_extension(package.ext);
 
       let jre_res = crate::net::get(&package.url).await?;
-      crate::util::stream_to_file::<_, crate::Error>(
+      crate::util::stream_to_file::<crate::Error>(
         jre_res,
         &zip_path,
-        || download.was_aborted(),
-        |size| download.add_progress_msg(size as u64, &message),
+        || download.is_aborted(),
+        |size| download.advance(size as u64),
       )
       .await?;
 
@@ -28,7 +28,7 @@ pub(crate) fn download_java(instance: Instance, download: DownloadTask, version:
       #[cfg(unix)]
       use std::os::unix::fs::PermissionsExt;
 
-      download.set_installing().await;
+      download.set_installing();
       crate::fs::zip::for_each(&zip_path, |mut file| {
         let mut path_parts = file.name().splitn(2, '/');
         let _ = path_parts.next();
@@ -70,11 +70,11 @@ pub(crate) fn download_java(instance: Instance, download: DownloadTask, version:
     .await;
 
     match download_result {
-      Ok(None) => download.aborted().await,
-      Ok(Some(())) => download.success().await,
+      Ok(None) => download.aborted(),
+      Ok(Some(())) => download.success(),
       Err(e) => {
-        download.set_error_message(e.to_string()).await;
-        download.failed().await
+        download.set_error_message(e.to_string());
+        download.failed()
       }
     };
   });

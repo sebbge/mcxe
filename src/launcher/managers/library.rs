@@ -67,9 +67,7 @@ impl LibraryManager {
       let native_path = natives_dir.join(filename);
 
       let mut bytes = Vec::with_capacity(file.size() as usize);
-      file
-        .read_to_end(&mut bytes)
-        .map_err(|e| crate::fs::IoError::from_io(e, &path))?;
+      file.read_to_end(&mut bytes).map_err(|e| crate::fs::IoError::from_io(e, &path))?;
 
       crate::fs::write_sync(&native_path, &bytes)?;
 

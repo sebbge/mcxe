@@ -1,4 +1,4 @@
-use super::ProgressTask;
+use super::{ProgressStatusExt, ProgressTask};
 use crate::{Instance, meta::ProcessedVersionMeta};
 
 use serde::Serialize;
@@ -18,28 +18,19 @@ pub(crate) fn checksum(instance: Instance, progress: ProgressTask, meta: Process
   tokio::spawn(async move {
     let checksum_result: crate::Result<Option<ChecksumReport>> = async {
       let mut rep = ChecksumReport::default();
-      progress.start().await;
+      progress.start();
 
       //--- Client
-      let client_name = &format!("Client {}.jar", &meta.id);
-      progress.set_message(client_name).await;
+      let client_name = &format!("Client {}.jar", meta.id);
+      progress.set_message(client_name);
       let client_path = instance.library.get_client_path(&meta.id);
       let client_hash = Some(meta.downloads.client.sha1.as_ref());
-      match check(&client_path, client_hash, client_name).await {
-        Ok(()) => {}
-        Err(CheckError::Missing(name)) => {
-          rep.missing_libraries.push(name);
-          rep.download_required = true;
-        }
-        Err(CheckError::Corrupt(name)) => {
-          rep.corrupted_libraries.push(name);
-          rep.download_required = true;
-        }
-      }
+      let result = check(&client_path, client_hash, client_name).await;
+      rep.download_required |= record(result, &mut rep.missing_libraries, &mut rep.corrupted_libraries);
 
       //--- Libraries
       for lib in &meta.libraries {
-        if progress.was_aborted() {
+        if progress.is_aborted() {
           return Ok(None);
         }
 
@@ -48,19 +39,10 @@ pub(crate) fn checksum(instance: Instance, progress: ProgressTask, meta: Process
           continue;
         }
 
-        progress.set_message(&lib.name).await;
+        progress.set_message(&lib.name);
         let lib_path = instance.library.get_lib_path(lib);
-        match check(&lib_path, lib.sha1.as_deref(), &lib.name).await {
-          Ok(()) => {}
-          Err(CheckError::Missing(name)) => {
-            rep.missing_libraries.push(name);
-            rep.download_required = true;
-          }
-          Err(CheckError::Corrupt(name)) => {
-            rep.corrupted_libraries.push(name);
-            rep.download_required = true;
-          }
-        }
+        let result = check(&lib_path, lib.sha1.as_deref(), &lib.name).await;
+        rep.download_required |= record(result, &mut rep.missing_libraries, &mut rep.corrupted_libraries);
       }
 
       //--- Assets
@@ -71,32 +53,22 @@ pub(crate) fn checksum(instance: Instance, progress: ProgressTask, meta: Process
         let asset_index = instance.asset.get_index(&meta.asset_index).await?;
 
         for asset in asset_index.objects {
-          if progress.was_aborted() {
+          if progress.is_aborted() {
             return Ok(None);
           }
 
-          progress.set_message(&asset.path).await;
+          progress.set_message(&asset.path);
           let asset_path = match instance.asset.get_asset_url_and_path(&asset) {
             Ok((_, path)) => path,
             Err(e) => {
-              let msg = format!("Invalid asset {}: {}", asset.path, e);
-              tracing::warn!(msg);
+              tracing::warn!("invalid asset {}: {}", asset.path, e);
               corrupted_assets.push(asset.path.clone());
               rep.download_required = true;
               continue;
             }
           };
-          match check(&asset_path, Some(&asset.hash), &asset.path).await {
-            Ok(()) => {}
-            Err(CheckError::Missing(name)) => {
-              missing_assets.push(name);
-              rep.download_required = true;
-            }
-            Err(CheckError::Corrupt(name)) => {
-              corrupted_assets.push(name);
-              rep.download_required = true;
-            }
-          }
+          let result = check(&asset_path, Some(&asset.hash), &asset.path).await;
+          rep.download_required |= record(result, &mut missing_assets, &mut corrupted_assets);
         }
 
         rep.missing_assets = Some(missing_assets);
@@ -108,15 +80,15 @@ pub(crate) fn checksum(instance: Instance, progress: ProgressTask, meta: Process
     .await;
 
     match checksum_result {
-      Ok(None) => progress.aborted().await,
+      Ok(None) => progress.aborted(),
       Ok(Some(report)) => {
         let out = serde_json::to_string(&report).ok();
-        progress.set_out(out).await;
-        progress.success().await;
+        progress.set_out(out);
+        progress.success();
       }
       Err(e) => {
-        progress.set_error_message(e.to_string()).await;
-        progress.failed().await
+        progress.set_error_message(e.to_string());
+        progress.failed()
       }
     };
   });
@@ -126,6 +98,21 @@ enum CheckError {
   Missing(String),
   Corrupt(String),
 }
+
+fn record(result: Result<(), CheckError>, missing: &mut Vec<String>, corrupted: &mut Vec<String>) -> bool {
+  match result {
+    Ok(()) => false,
+    Err(CheckError::Missing(name)) => {
+      missing.push(name);
+      true
+    }
+    Err(CheckError::Corrupt(name)) => {
+      corrupted.push(name);
+      true
+    }
+  }
+}
+
 async fn check(path: &std::path::Path, sha1_opt: Option<&str>, label: &str) -> Result<(), CheckError> {
   if !path.exists() {
     return Err(CheckError::Missing(label.to_string()));
@@ -136,8 +123,7 @@ async fn check(path: &std::path::Path, sha1_opt: Option<&str>, label: &str) -> R
       Ok(true) => return Ok(()),
       Ok(false) => return Err(CheckError::Corrupt(label.to_string())),
       Err(e) => {
-        let msg = format!("Couldn't verify integrity for {}: {}", label, e);
-        tracing::error!(msg);
+        tracing::error!("couldn't verify integrity for {}: {}", label, e);
         return Err(CheckError::Corrupt(label.to_string()));
       }
     };

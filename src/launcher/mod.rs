@@ -74,45 +74,41 @@ impl InnerLauncher {
   }
   //
 
-  pub async fn download(
-    &self,
-    instance: Instance,
-    version_id: &str,
-  ) -> Result<(Option<DownloadHandle>, DownloadHandle)> {
-    let meta = instance.version.read().await.meta(version_id).await?;
+  pub async fn download(self: Arc<Self>, version_id: &str) -> Result<(Option<DownloadHandle>, DownloadHandle)> {
+    let meta = self.version.read().await.meta(version_id).await?;
 
     //= JAVA
-    let java_handle = match instance.java.get_java(&meta.java_version) {
+    let java_handle = match self.java.get_java(&meta.java_version).await {
       Ok(_) => None,
       Err(_) => {
         let java_version = meta.java_version.as_ref().map(|j| j.major_version).unwrap_or(21);
-        let id = format!("jre-{}:{}", java_version, &version_id);
+        let id = format!("jre-{}:{}", java_version, version_id);
 
-        let (download, handle) = DownloadTask::new(id).await;
-        download_java(Arc::clone(&instance), download, java_version);
+        let (download, handle) = DownloadTask::new(id);
+        download_java(Arc::clone(&self), download, java_version);
         Some(handle)
       }
     };
 
     //= GAME
-    let (download, mc_handle) = DownloadTask::new(version_id).await;
-    download_game(instance, download, meta);
+    let (download, mc_handle) = DownloadTask::new(version_id);
+    download_game(self, download, meta);
     Ok((java_handle, mc_handle))
   }
 
-  pub async fn launch(&self, instance: Instance, config: LaunchConfig) -> Result<LaunchHandle> {
-    let meta = instance.version.read().await.meta(&config.version).await?;
+  pub async fn launch(self: Arc<Self>, config: LaunchConfig) -> Result<LaunchHandle> {
+    let meta = self.version.read().await.meta(&config.version).await?;
 
-    let (launch, handle) = LaunchTask::new(&config.id).await;
-    launch_game(instance, launch, meta, config).await;
+    let (launch, handle) = LaunchTask::new(&config.id);
+    launch_game(self, launch, meta, config).await;
     Ok(handle)
   }
 
-  pub async fn checksum(&self, instance: Instance, version_id: &str) -> Result<ProgressHandle> {
-    let meta = instance.version.read().await.meta(version_id).await?;
+  pub async fn checksum(self: Arc<Self>, version_id: &str, check_assets: bool) -> Result<ProgressHandle> {
+    let meta = self.version.read().await.meta(version_id).await?;
 
-    let (progress, handle) = ProgressTask::new(version_id).await;
-    checksum(instance, progress, meta, false);
+    let (progress, handle) = ProgressTask::new(version_id);
+    checksum(self, progress, meta, check_assets);
     Ok(handle)
   }
 }

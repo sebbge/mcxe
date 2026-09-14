@@ -19,6 +19,7 @@ pub struct VersionManifest {
   pub versions: IndexMap<String, Version>,
 }
 
+#[cfg_attr(feature = "ts-types", derive(ts_rs::TS), ts(export))]
 #[derive(Default, Serialize, Deserialize, Debug, Clone)]
 pub struct LatestVersions {
   pub release: String,
@@ -42,6 +43,7 @@ pub struct ManifestVersion {
 }
 
 //===> VERSION METADATA
+#[cfg_attr(feature = "ts-types", derive(ts_rs::TS), ts(export))]
 #[derive(Serialize, Debug, Clone)]
 pub struct Version {
   pub id: String,
@@ -51,14 +53,14 @@ pub struct Version {
   pub type_: VersionType,
 
   #[serde(skip_serializing)]
+  #[cfg_attr(feature = "ts-types", ts(skip))]
   pub url: Option<String>,
 
   pub is_external: bool,
   pub status: VersionStatus,
-  // #[serde(skip)]
-  // pub meta: Option<ProcessedVersionMeta>,
 }
 
+#[cfg_attr(feature = "ts-types", derive(ts_rs::TS), ts(export))]
 #[derive(Serialize, Default, Debug, Clone)]
 pub enum VersionStatus {
   #[default]
@@ -67,6 +69,7 @@ pub enum VersionStatus {
   Ready,
 }
 
+#[cfg_attr(feature = "ts-types", derive(ts_rs::TS), ts(export))]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum VersionType {
@@ -80,7 +83,7 @@ impl From<ManifestVersion> for Version {
   /// Convert vanilla versions to [`Version`]
   fn from(v: ManifestVersion) -> Self {
     Self {
-      name: format!("Minecraft {}", &v.id),
+      name: format!("Minecraft {}", v.id),
       inherits_from: None,
       id: v.id,
       type_: v.type_,
@@ -94,12 +97,8 @@ impl From<ManifestVersion> for Version {
 impl From<PartialVersionMeta> for Version {
   /// Convert **external**  versions with **partial** metadata to [`Version`]
   fn from(v: PartialVersionMeta) -> Self {
-    let name = v
-      .id
-      .split('-')
-      .filter(|&part| part != v.inherits_from && part != "loader")
-      .collect::<Vec<&str>>()
-      .join(" ");
+    let name =
+      v.id.split('-').filter(|&part| part != v.inherits_from && part != "loader").collect::<Vec<&str>>().join(" ");
 
     Self {
       name: capitalize(&name),

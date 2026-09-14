@@ -2,8 +2,9 @@ use crate::meta::JavaVersion;
 
 use serde::Deserialize;
 use std::env::consts::{ARCH, OS};
+use std::path::Path;
 use std::path::PathBuf;
-use std::{path::Path, process::Command};
+use tokio::process::Command;
 
 #[derive(Deserialize)]
 pub struct ZuluPackage {
@@ -28,12 +29,11 @@ impl JavaManager {
     Self { java_dir }
   }
   //
-  pub fn get_java(&self, version: &Option<JavaVersion>) -> crate::Result<(PathBuf, u16)> {
+  pub async fn get_java(&self, version: &Option<JavaVersion>) -> crate::Result<(PathBuf, u16)> {
     let major_version = version.as_ref().map(|j| j.major_version).unwrap_or(21);
     let java_path = self.get_java_path(&major_version);
 
-    if !self.test_java(&java_path)? {
-      //todo: java is unavailable, maybe delete or notify user
+    if !self.test_java(&java_path).await? {
       let e = std::io::Error::other("Java is unavailable");
       return Err(crate::fs::IoError::from_io(e, &java_path).into());
     };
@@ -54,7 +54,7 @@ impl JavaManager {
     java_path
   }
 
-  fn test_java(&self, java_path: &Path) -> crate::Result<bool> {
+  async fn test_java(&self, java_path: &Path) -> crate::Result<bool> {
     if !java_path.exists() {
       return Ok(false);
     }
@@ -62,6 +62,7 @@ impl JavaManager {
     let output = Command::new(java_path)
       .arg("-version")
       .output()
+      .await
       .map_err(|e| crate::Error::Io(crate::fs::IoError::from_io(e, java_path)))?;
 
     Ok(output.status.success())

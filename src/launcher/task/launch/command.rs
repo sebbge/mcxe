@@ -1,9 +1,6 @@
 use super::{LaunchConfig, LaunchTask};
 
-use crate::{
-  Instance,
-  meta::{ProcessedLibrary, ProcessedVersionMeta},
-};
+use crate::{Instance, meta::ProcessedVersionMeta};
 use std::collections::HashMap;
 use tokio::process::Command;
 
@@ -16,7 +13,7 @@ pub(super) async fn build(
   let java_path = if let Some(custom) = &config.custom_java {
     custom.clone()
   } else {
-    let (path, _) = instance.java.get_java(&meta.java_version)?;
+    let (path, _) = instance.java.get_java(&meta.java_version).await?;
     path
   };
 
@@ -25,7 +22,7 @@ pub(super) async fn build(
     instance.library.extract_native(&config.id, native).await?;
   }
 
-  process.start().await;
+  process.start();
 
   if config.token.is_some() {
     tracing::info!("Session found. Minecraft will run in online mode");
@@ -33,7 +30,7 @@ pub(super) async fn build(
     tracing::info!("NO SESSION FOUND. Minecraft will run in offline mode!");
   }
 
-  let (classpath, _) = build_classpath(&instance, &meta);
+  let classpath = build_classpath(&instance, &meta);
 
   let jvm_args = build_jvm_args(&instance, &meta, &classpath, config);
   let game_args = build_game_args(&instance, &meta, config);
@@ -49,18 +46,15 @@ pub(super) async fn build(
   Ok(command)
 }
 
-fn build_classpath(instance: &Instance, meta: &ProcessedVersionMeta) -> (String, Vec<ProcessedLibrary>) {
+fn build_classpath(instance: &Instance, meta: &ProcessedVersionMeta) -> String {
   let client_id = meta.inherits_from.as_ref().unwrap_or(&meta.id); // parent version id
   let client_path = instance.library.get_client_path(client_id);
 
-  let separator = crate::platform::classpath_separator();
-
-  let mut skipped_libs = Vec::new();
+  let separator = crate::meta::platform::classpath_separator();
 
   let mut classpath = Vec::new();
   for lib in &meta.libraries {
     if lib.must_skip {
-      skipped_libs.push(lib.clone());
       continue;
     }
 
@@ -72,7 +66,7 @@ fn build_classpath(instance: &Instance, meta: &ProcessedVersionMeta) -> (String,
   }
 
   classpath.push(client_path.to_string_lossy().to_string());
-  (classpath.join(separator), skipped_libs)
+  classpath.join(separator)
 }
 
 fn build_jvm_args(
@@ -83,7 +77,7 @@ fn build_jvm_args(
 ) -> Vec<String> {
   let natives_dir = instance.library.get_natives_dir(&config.id).to_string_lossy().to_string();
   let libraries_dir = instance.library.libraries_dir.to_string_lossy().to_string();
-  let separator = crate::platform::classpath_separator().to_string();
+  let separator = crate::meta::platform::classpath_separator().to_string();
   let mut variables: HashMap<&str, &str> = HashMap::from([
     // Minecraft
     ("natives_directory", natives_dir.as_str()),
@@ -116,7 +110,7 @@ fn build_jvm_args(
     args.push(cp.to_string());
   }
 
-  let jna_tmp_arg = format!("-Djna.tmpdir={}", crate::platform::tmp_dir());
+  let jna_tmp_arg = format!("-Djna.tmpdir={}", crate::meta::platform::tmp_dir());
   if !args.contains(&jna_tmp_arg) {
     args.push(jna_tmp_arg);
   }

@@ -3,22 +3,29 @@ name = "comet"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+ts-types = ["dep:ts-rs"]
+
 [dependencies]
-common = { workspace = true }
-tasked = { workspace = true }
+taskee = { git = "https://github.com/bllexz/taskee", tag = "v0.1.0" }
+ts-rs = { version = "12.0.1", default-features = false, features = ["serde-compat"], optional = true }
 
-tokio = { workspace = true, features = ["process"] }
-serde = { workspace = true }
-serde_json = { workspace = true }
-thiserror = { workspace = true }
-tracing = { workspace = true }
-futures = { workspace = true }
-indexmap = { workspace = true }
-regex = { workspace = true }
-discordipc = { workspace = true }
+tokio = { version = "1.53.1", default-features = false, features = ["macros", "process", "fs", "io-util"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.151", default-features = false, features = ["std"] }
+thiserror = "2.0.20"
+tracing = { version = "0.1.44", default-features = false, features = ["std"] }
+futures = { version = "0.3.34", default-features = false, features = ["std"] }
+indexmap = { version = "2.14.2", default-features = false, features = ["std"] }
+regex = { version = "1.13.1", default-features = false, features = ["std"] }
+sha1 = { version = "0.11.0", default-features = false }
 
-typed-builder = "0.21.0"
-url = "2.5.4"
+reqwest = { version = "0.13.5", features = ["stream"] }
+zip = { version = "8.5.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+bon = "3.10.3"
+url = "2.5.8"
 
 [dev-dependencies]
-tracing-subscriber = "0.3.19"
+tracing-subscriber = "0.3.23"
+tokio = { version = "1.53.1", default-features = false, features = ["macros", "rt-multi-thread"] }

@@ -2,10 +2,12 @@ mod checksum;
 pub use checksum::*;
 
 use serde::Serialize;
-use tasked::{Task, TaskStatus};
+use taskee::{Task, TaskStatus};
 
 // operation task
-#[derive(TaskStatus, Serialize, Default, Clone, Debug)]
+#[cfg_attr(feature = "ts-types", derive(ts_rs::TS), ts(export))]
+#[derive(TaskStatus, Serialize, Default, Clone, Debug, PartialEq)]
+#[serde(rename_all = "UPPERCASE")]
 pub enum ProgressStatus {
   #[default]
   Pending,
@@ -19,9 +21,8 @@ pub enum ProgressStatus {
 }
 
 #[derive(Task, Default, Clone)]
-#[tasked(progress, status)]
+#[taskee(progress, status)]
 pub struct Progress {
-  pub id: String,
   pub status: ProgressStatus,
   pub current: u64,
   pub total: u64,
@@ -31,32 +32,16 @@ pub struct Progress {
   pub out: Option<String>,
 }
 
-// internal progress manager
 impl ProgressTask {
-  pub async fn set_message(&self, message: impl Into<String>) {
-    self
-      .update(|payload| {
-        payload.message = message.into();
-        true
-      })
-      .await;
+  pub fn set_message(&self, message: impl Into<String>) {
+    self.set(|payload| payload.message = message.into());
   }
 
-  pub async fn set_error_message(&self, message: impl Into<String>) {
-    self
-      .update(|payload| {
-        payload.error_message = message.into();
-        true
-      })
-      .await;
+  pub fn set_error_message(&self, message: impl Into<String>) {
+    self.set(|payload| payload.error_message = message.into());
   }
 
-  pub async fn set_out(&self, out: Option<String>) {
-    self
-      .update(|payload| {
-        payload.out = out;
-        true
-      })
-      .await;
+  pub fn set_out(&self, out: Option<String>) {
+    self.set(|payload| payload.out = out);
   }
 }

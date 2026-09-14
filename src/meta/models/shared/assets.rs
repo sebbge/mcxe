@@ -25,6 +25,7 @@ pub struct RawAsset {
 
 #[derive(Deserialize, Debug)]
 pub struct AssetIndex {
+  #[allow(dead_code)]
   pub map_to_resources: Option<bool>,
   #[serde(deserialize_with = "asset_map_to_vec")]
   pub objects: Vec<Asset>,

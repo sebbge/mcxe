@@ -2,39 +2,36 @@ mod command;
 
 use crate::{Instance, meta::ProcessedVersionMeta};
 use serde::Serialize;
+use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::{Arc, RwLock};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Child;
 
-use tasked::{Task, TaskStatus};
+use taskee::{Task, TaskStatus};
 
-#[derive(typed_builder::TypedBuilder)]
+const DEFAULT_UUID: &str = "00000000-0000-0000-0000-000000000000";
+
+#[derive(bon::Builder)]
+#[builder(on(_, into))]
 pub struct LaunchConfig {
-  #[builder(setter(into))]
   pub(crate) id: String,
-  #[builder(setter(into))]
   pub(crate) version: String,
-  #[builder(setter(into))]
   pub(super) username: String,
-  #[builder(setter(into))]
+  /// Defaults to the nil UUID, for offline play.
+  #[builder(default = DEFAULT_UUID)]
   pub(super) uuid: String,
-  #[builder(default)]
   pub(super) token: Option<String>,
-  #[builder(setter(into))]
   pub(super) directory: String,
-  #[builder(default)]
-  pub(super) custom_java: Option<std::path::PathBuf>,
-  #[builder(default)]
+  pub(super) custom_java: Option<PathBuf>,
   pub(super) extra_jvm_args: Option<Vec<String>>,
-  #[builder(default, setter(strip_option))]
   pub(super) extra_game_args: Option<Vec<String>>,
-  #[builder(default)]
-  #[allow(dead_code)] // TODO: use check_assets field
-  pub(super) check_assets: Option<bool>,
 }
 
 // launch task
-#[derive(TaskStatus, Serialize, Default, Clone, Debug)]
+#[cfg_attr(feature = "ts-types", derive(ts_rs::TS), ts(export))]
+#[derive(TaskStatus, Serialize, Default, Clone, Debug, PartialEq)]
+#[serde(rename_all = "UPPERCASE")]
 pub enum LaunchStatus {
   #[default]
   Pending,
@@ -48,41 +45,45 @@ pub enum LaunchStatus {
   Success,
 }
 #[derive(Task, Default, Clone)]
-#[tasked(status)]
+#[taskee(status)]
 pub struct Launch {
   pub status: LaunchStatus,
-  pub is_previous: bool,
-  pub stdout: Vec<String>,
-  pub stderr: Vec<String>,
+  pub stdout: Logs,
+  pub stderr: Logs,
 }
 
-// private launch manager
+#[derive(Clone, Default, Debug)]
+pub struct Logs(Arc<RwLock<Vec<String>>>);
+
+impl Logs {
+  pub(crate) fn push(&self, line: String) {
+    self.0.write().unwrap().push(line);
+  }
+
+  pub fn len(&self) -> usize {
+    self.0.read().unwrap().len()
+  }
+
+  pub fn is_empty(&self) -> bool {
+    self.len() == 0
+  }
+
+  pub fn since(&self, start: usize) -> Vec<String> {
+    self.0.read().unwrap()[start..].to_vec()
+  }
+
+  pub fn lines(&self) -> Vec<String> {
+    self.0.read().unwrap().clone()
+  }
+}
+
 impl LaunchTask {
-  pub async fn add_line_stdout(&self, line: String) {
-    self
-      .update(|payload| {
-        payload.stdout.push(line);
-        true
-      })
-      .await;
+  pub(crate) fn add_line_stdout(&self, line: String) {
+    self.set(|payload| payload.stdout.push(line));
   }
 
-  pub async fn add_line_stderr(&self, line: String) {
-    self
-      .update(|payload| {
-        payload.stderr.push(line);
-        true
-      })
-      .await;
-  }
-
-  pub async fn set_playing(&self) {
-    self
-      .update(|payload| {
-        payload.status.set_running();
-        true
-      })
-      .await;
+  pub(crate) fn add_line_stderr(&self, line: String) {
+    self.set(|payload| payload.stderr.push(line));
   }
 }
 
@@ -96,7 +97,7 @@ pub(crate) async fn launch_game(
     Ok(cmd) => cmd,
     Err(e) => {
       tracing::error!("{}", e);
-      process.failed().await;
+      process.failed();
       return;
     }
   };
@@ -108,8 +109,8 @@ pub(crate) async fn launch_game(
   {
     Ok(child) => child,
     Err(e) => {
-      tracing::error!("Failed to execute Minecraft process: {}", e);
-      process.failed().await;
+      tracing::error!("failed to execute process: {}", e);
+      process.failed();
       return;
     }
   };
@@ -126,7 +127,7 @@ async fn watch_process(process: LaunchTask, mut child: Child) {
     tokio::spawn(async move {
       let mut lines = BufReader::new(stdout).lines();
       while let Ok(Some(line)) = lines.next_line().await {
-        process.add_line_stdout(format!("{line}\n")).await;
+        process.add_line_stdout(format!("{line}\n"));
       }
     });
   }
@@ -137,41 +138,41 @@ async fn watch_process(process: LaunchTask, mut child: Child) {
     tokio::spawn(async move {
       let mut lines = BufReader::new(stderr).lines();
       while let Ok(Some(line)) = lines.next_line().await {
-        process.add_line_stderr(format!("{line}\n")).await;
+        process.add_line_stderr(format!("{line}\n"));
       }
     });
   }
 
   loop {
-    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+    let tick = tokio::time::sleep(tokio::time::Duration::from_secs(1));
 
-    process.set_playing().await;
-
-    if process.was_aborted() {
+    if process.until_aborted(tick).await.is_none() {
       if let Err(e) = child.kill().await {
-        tracing::warn!("Failed to kill process: {e}");
+        tracing::warn!("failed to kill process: {e}");
         break;
       }
       tracing::info!("game exited successfully");
-      process.success().await;
+      process.success();
       break;
     }
+
+    process.set_running();
 
     match child.try_wait() {
       Ok(None) => continue,
       Ok(Some(output)) => {
         if output.success() {
           tracing::info!("game exited successfully");
-          process.success().await;
+          process.success();
         } else {
           tracing::error!("game exited with an error");
-          process.aborted().await;
+          process.aborted();
         }
         break;
       }
       Err(e) => {
-        tracing::error!("Error while waiting for Minecraft process: {e}");
-        process.failed().await;
+        tracing::error!("error while waiting for process: {e}");
+        process.failed();
         break;
       }
     }

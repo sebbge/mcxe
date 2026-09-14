@@ -7,20 +7,25 @@ const DEFAULT_ROOT_DIR: &str = "./Comet";
 const DEFAULT_ASSETS_URL: &str = "https://resources.download.minecraft.net/";
 const DEFAULT_MANIFEST_URL: &str = "https://piston-meta.mojang.com/mc/game/version_manifest.json";
 
-#[derive(typed_builder::TypedBuilder, Default)]
+#[derive(bon::Builder)]
+#[builder(on(_, into))]
 pub struct LauncherConfig {
-  #[builder(default = DEFAULT_LAUNCHER_NAME.into(), setter(into))]
+  #[builder(default = DEFAULT_LAUNCHER_NAME)]
   pub(super) name: String,
-  #[builder(default = DEFAULT_LAUNCHER_VERSION.into(), setter(into))]
+  #[builder(default = DEFAULT_LAUNCHER_VERSION)]
   pub(super) version: String,
-  #[builder(default = DEFAULT_ROOT_DIR.into(), setter(into))]
+  #[builder(default = DEFAULT_ROOT_DIR)]
   pub(super) root_dir: PathBuf,
-  #[builder(default = DEFAULT_ASSETS_URL.into(), setter(into))]
+  #[builder(default = DEFAULT_ASSETS_URL)]
   pub(super) assets_url: String,
-  #[builder(default = DEFAULT_MANIFEST_URL.into(), setter(into))]
+  #[builder(default = DEFAULT_MANIFEST_URL)]
   pub(super) manifest_url: String,
-  #[builder(default)]
   pub(super) net_s: Option<Arc<Semaphore>>,
-  #[builder(default)]
   pub(super) io_s: Option<Arc<Semaphore>>,
+}
+
+impl Default for LauncherConfig {
+  fn default() -> Self {
+    Self::builder().build()
+  }
 }

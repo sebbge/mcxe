@@ -1,34 +1,37 @@
-mod manifest;
-pub use manifest::*;
-use serde::de::DeserializeOwned;
-
 use crate::LatestVersions;
 use crate::meta::{FullVersionMeta, PartialVersionMeta, ProcessedVersionMeta, Version, VersionManifest, VersionStatus};
 use indexmap::IndexMap;
+use serde::de::DeserializeOwned;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 use url::Url;
 
 pub struct VersionManager {
   pub versions_dir: PathBuf,
-  manifest: ManifestManager,
+  pub manifest_url: Url,
+  pub manifest_path: PathBuf,
+  manifest_refresh: Duration,
   versions: IndexMap<String, Version>,
   latest_versions: Option<LatestVersions>,
 }
 impl VersionManager {
   pub fn new(versions_dir: PathBuf, manifest_url: Url) -> Self {
-    let manifest = ManifestManager::new(&versions_dir, manifest_url);
+    let manifest_path = versions_dir.join("version_manifest.json");
+    let manifest_refresh = Duration::from_secs(60 * 60 * 24);
 
     Self {
       versions_dir,
-      manifest,
+      manifest_url,
+      manifest_path,
+      manifest_refresh,
       versions: IndexMap::new(),
       latest_versions: None,
     }
   }
 
   pub async fn init(&mut self) -> crate::Result<()> {
-    let mut manifest = self.manifest.get().await.unwrap_or_else(|e| {
-      tracing::error!("Couldn't get minecraft version manifest: {}", e);
+    let mut manifest = self.manifest_get().await.unwrap_or_else(|e| {
+      tracing::error!("couldn't get minecraft version manifest: {}", e);
       VersionManifest::default()
     });
     let mut external_versions = IndexMap::new();
@@ -40,23 +43,13 @@ impl VersionManager {
       if let Some(version) = manifest.versions.get_mut(&version_id) {
         if !version_path.exists() {
           version.status = VersionStatus::NeedsDownload;
-          continue;
-        } else {
-          // cache
-          // version.meta = match manifest.latest.is_latest(&version_id) {
-          //   true => crate::fs::read_json::<FullVersionMeta>(&version_path)
-          //     .await
-          //     .ok()
-          //     .map(|meta| meta.p),
-          //   false => None,
-          // };
         }
       } else {
-        //- expects full or partial/child version meta
+        //- expects full or partial version meta
         let bytes = match crate::fs::read(&version_path).await {
           Ok(b) => b,
           Err(e) => {
-            tracing::error!("Couldn't load version {}: {}", &version_id, e);
+            tracing::error!("couldn't load version {}: {}", &version_id, e);
             continue;
           }
         };
@@ -67,7 +60,7 @@ impl VersionManager {
             let full = match serde_json::from_slice::<PartialVersionMeta>(&bytes) {
               Ok(meta) => meta,
               Err(e) => {
-                tracing::error!("Version {} contains malformed metadata: {}", &version_id, e);
+                tracing::error!("version {} contains malformed metadata: {}", &version_id, e);
                 continue;
               }
             };
@@ -95,8 +88,8 @@ impl VersionManager {
     if let Some(latest) = &self.latest_versions {
       return latest.clone();
     }
-    self.manifest.get().await.map(|m| m.latest).unwrap_or_else(|e| {
-      tracing::error!("Couldn't get latest minecraft versions: {}", e);
+    self.manifest_get().await.map(|m| m.latest).unwrap_or_else(|e| {
+      tracing::error!("couldn't get latest minecraft versions: {}", e);
       LatestVersions::default()
     })
   }
@@ -155,14 +148,35 @@ impl VersionManager {
     if let Some(parent) = parent {
       let partial = self.read_or_fetch::<PartialVersionMeta>(version).await?;
       let full = self.read_or_fetch::<FullVersionMeta>(parent).await?;
-      let meta = full.merge_and_process(partial);
-      //cache version.meta = Some(meta.clone());
-      Ok(meta)
+      Ok(full.merge_and_process(partial))
     } else {
       let full = self.read_or_fetch::<FullVersionMeta>(version).await?;
-      let meta = full.process();
-      //cache version.meta = Some(meta.clone());
-      Ok(meta)
+      Ok(full.process())
     }
+  }
+
+  // manifest
+  pub async fn manifest_get(&self) -> crate::Result<VersionManifest> {
+    if let Some(local_manifest) = self.manifest_try_read().await? {
+      return Ok(local_manifest);
+    }
+
+    let fresh_manifest_bytes = crate::net::get_bytes(self.manifest_url.as_ref()).await?;
+    let fresh_manifest = serde_json::from_slice::<VersionManifest>(&fresh_manifest_bytes)?;
+
+    crate::fs::write(&self.manifest_path, &fresh_manifest_bytes).await?;
+
+    Ok(fresh_manifest)
+  }
+
+  async fn manifest_try_read(&self) -> crate::Result<Option<VersionManifest>> {
+    if !self.manifest_path.exists() || crate::fs::is_old(&self.manifest_path, &self.manifest_refresh).await? {
+      return Ok(None);
+    }
+
+    let manifest_bytes = crate::fs::read(&self.manifest_path).await?;
+    let manifest = serde_json::from_slice::<VersionManifest>(&manifest_bytes)?;
+
+    Ok(Some(manifest))
   }
 }
