@@ -50,6 +50,28 @@ impl AssetManager {
     total
   }
 
+  pub async fn reconstruct(&self, index_meta: &AssetIndexFile, game_dir: &Path) -> crate::Result<Option<PathBuf>> {
+    let index = self.get_index(index_meta).await?;
+
+    let target = if index.map_to_resources {
+      game_dir.join("resources")
+    } else if index.is_virtual {
+      self.assets_dir.join("virtual").join(&index_meta.id)
+    } else {
+      return Ok(None);
+    };
+
+    for asset in &index.objects {
+      let (_, object) = self.get_asset_url_and_path(asset)?;
+      let path = target.join(&asset.path);
+      if object.exists() && !path.exists() {
+        crate::fs::copy(&object, &path).await?;
+      }
+    }
+
+    Ok(Some(target))
+  }
+
   pub fn get_asset_url_and_path(&self, asset: &Asset) -> crate::Result<(String, PathBuf)> {
     if asset.hash.len() < 2 {
       return Err(crate::Error::Metadata(format!("Invalid asset hash: {}", asset.hash)));

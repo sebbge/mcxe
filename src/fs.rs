@@ -182,6 +182,13 @@ pub async fn is_valid_sha1(path: impl AsRef<Path>, expected_sha1: &str) -> IoRes
   Ok(hex == expected_sha1)
 }
 
+pub async fn copy(from: impl AsRef<Path>, to: impl AsRef<Path>) -> IoResult<()> {
+  let (from, to) = (from.as_ref(), to.as_ref());
+  ensure_parent(to).await?;
+  fs::copy(from, to).await.map_err(|e| IoError::from_io(e, to))?;
+  Ok(())
+}
+
 // directories
 
 pub async fn create_dir_all(path: impl AsRef<Path>) -> IoResult<()> {

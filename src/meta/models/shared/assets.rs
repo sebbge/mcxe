@@ -25,8 +25,10 @@ pub struct RawAsset {
 
 #[derive(Deserialize, Debug)]
 pub struct AssetIndex {
-  #[allow(dead_code)]
-  pub map_to_resources: Option<bool>,
+  #[serde(default)]
+  pub map_to_resources: bool,
+  #[serde(default, rename = "virtual")]
+  pub is_virtual: bool,
   #[serde(deserialize_with = "asset_map_to_vec")]
   pub objects: Vec<Asset>,
 }

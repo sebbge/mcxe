@@ -2,6 +2,7 @@ use super::LaunchConfig;
 
 use crate::{Instance, meta::ProcessedVersionMeta};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
 pub(super) async fn build(
@@ -30,10 +31,11 @@ pub(super) async fn build(
   let classpath = build_classpath(&instance, &meta);
 
   let jvm_args = build_jvm_args(&instance, &meta, &classpath, config);
-  let game_args = build_game_args(&instance, &meta, config);
+  let game_dir = instance.instances_dir.join(&config.directory);
+  let game_assets = instance.asset.reconstruct(&meta.asset_index, &game_dir).await?;
+  let game_args = build_game_args(&instance, &meta, config, &game_dir, game_assets);
   let args = [jvm_args, game_args].concat();
 
-  let game_dir = instance.instances_dir.join(&config.directory);
   crate::fs::create_dir_all(&game_dir).await?;
 
   let mut command = Command::new(java_path);
@@ -120,10 +122,17 @@ fn build_jvm_args(
   args
 }
 
-fn build_game_args(instance: &Instance, meta: &ProcessedVersionMeta, config: &LaunchConfig) -> Vec<String> {
+fn build_game_args(
+  instance: &Instance,
+  meta: &ProcessedVersionMeta,
+  config: &LaunchConfig,
+  game_dir: &Path,
+  game_assets: Option<PathBuf>,
+) -> Vec<String> {
   let token = config.token.clone().unwrap_or_else(|| String::from("0"));
-  let game_dir = instance.instances_dir.join(&config.directory).to_string_lossy().to_string();
+  let game_dir = game_dir.to_string_lossy().to_string();
   let assets_dir = instance.asset.assets_dir.to_string_lossy().to_string();
+  let game_assets = game_assets.map_or_else(|| assets_dir.clone(), |dir| dir.to_string_lossy().to_string());
 
   let mut variables = HashMap::from([
     // Minecraft
@@ -131,6 +140,7 @@ fn build_game_args(instance: &Instance, meta: &ProcessedVersionMeta, config: &La
     ("version_name", &meta.id),
     ("game_directory", &game_dir),
     ("assets_root", &assets_dir),
+    ("game_assets", &game_assets),
     ("assets_index_name", &meta.asset_index.id),
     ("auth_uuid", &config.uuid),
     ("auth_session", token.as_ref()), // for older versions
