@@ -1,4 +1,4 @@
-use super::{LaunchConfig, LaunchTask};
+use super::LaunchConfig;
 
 use crate::{Instance, meta::ProcessedVersionMeta};
 use std::collections::HashMap;
@@ -6,7 +6,6 @@ use tokio::process::Command;
 
 pub(super) async fn build(
   instance: Instance,
-  process: &LaunchTask,
   meta: ProcessedVersionMeta,
   config: &LaunchConfig,
 ) -> crate::Result<Command> {
@@ -22,8 +21,6 @@ pub(super) async fn build(
     instance.library.extract_native(&config.id, native).await?;
   }
 
-  process.start();
-
   if config.token.is_some() {
     tracing::info!("Session found. Minecraft will run in online mode");
   } else {
@@ -36,7 +33,11 @@ pub(super) async fn build(
   let game_args = build_game_args(&instance, &meta, config);
   let args = [jvm_args, game_args].concat();
 
+  let game_dir = instance.instances_dir.join(&config.directory);
+  crate::fs::create_dir_all(&game_dir).await?;
+
   let mut command = Command::new(java_path);
+  command.current_dir(&game_dir);
 
   #[cfg(windows)]
   command.creation_flags(0x08000000);
@@ -47,8 +48,7 @@ pub(super) async fn build(
 }
 
 fn build_classpath(instance: &Instance, meta: &ProcessedVersionMeta) -> String {
-  let client_id = meta.inherits_from.as_ref().unwrap_or(&meta.id); // parent version id
-  let client_path = instance.library.get_client_path(client_id);
+  let client_path = instance.library.get_client_path(meta.client_id());
 
   let separator = crate::meta::platform::classpath_separator();
 
@@ -135,8 +135,9 @@ fn build_game_args(instance: &Instance, meta: &ProcessedVersionMeta, config: &La
     ("auth_uuid", &config.uuid),
     ("auth_session", token.as_ref()), // for older versions
     ("auth_access_token", token.as_ref()),
+    ("user_properties", "{}"),
     ("user_type", "msa"),
-    ("version_type", "Blazar"),
+    ("version_type", &instance.launcher_name),
     // External
   ]);
 

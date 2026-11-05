@@ -14,6 +14,7 @@ pub fn native_classifier() -> &'static Vec<String> {
         classifiers.push("natives-macos-arm64".into());
         classifiers.push("natives-osx".into());
       }
+      ("macos", _) => classifiers.push("natives-osx".into()),
       ("windows", "x86") => {
         classifiers.push("natives-windows-x86".into());
         classifiers.push("natives-windows-32".into());
@@ -46,4 +47,17 @@ pub fn tmp_dir() -> String {
   let tmp_dir = std::env::temp_dir();
   crate::fs::create_dir_all_sync(&tmp_dir).ok();
   tmp_dir.to_string_lossy().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+  #[test]
+  fn native_classifiers_match_this_system() {
+    let classifiers = super::native_classifier();
+    assert!(classifiers.contains(&format!("natives-{}", std::env::consts::OS)));
+
+    if cfg!(target_os = "macos") {
+      assert!(classifiers.contains(&"natives-osx".to_string()));
+    }
+  }
 }

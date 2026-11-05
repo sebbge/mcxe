@@ -66,3 +66,23 @@ impl Launcher {
     Arc::clone(&self.0).checksum(version_id, check_assets).await
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[tokio::test]
+  #[ignore = "requires network"]
+  async fn fetches_version_metadata_from_mojang() -> Result<()> {
+    let root = std::env::temp_dir().join("comet-test");
+    let launcher = Launcher::new(LauncherConfig::builder().root_dir(root).build());
+    launcher.init().await?;
+
+    let meta = launcher.0.version.read().await.meta("1.21.1").await?;
+
+    assert_eq!(meta.id, "1.21.1");
+    assert!(!meta.main_class.is_empty());
+    assert!(meta.libraries.iter().any(|lib| !lib.must_skip));
+    Ok(())
+  }
+}

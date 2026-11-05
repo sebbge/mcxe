@@ -19,6 +19,12 @@ pub struct ProcessedVersionMeta {
   pub logging: Option<Logging>,
 }
 
+impl ProcessedVersionMeta {
+  pub fn client_id(&self) -> &str {
+    self.inherits_from.as_deref().unwrap_or(&self.id)
+  }
+}
+
 #[derive(Default, Debug, Clone)]
 pub struct ProcessedArguments {
   pub game: Vec<String>,

@@ -3,18 +3,20 @@ use crate::Instance;
 use crate::meta::{Asset, AssetIndex, File, ProcessedLibrary, ProcessedVersionMeta};
 use futures::FutureExt;
 use futures::future;
+use std::collections::HashSet;
 
 pub(crate) fn download_game(instance: Instance, download: DownloadTask, meta: ProcessedVersionMeta) {
   tokio::spawn(async move {
     let download_result: crate::Result<Option<()>> = std::panic::AssertUnwindSafe(async {
       // meta
+      let client_id = meta.client_id().to_string();
       let libraries = meta.libraries;
       let asset_index = instance.asset.get_index(&meta.asset_index).await?;
       let client = meta.downloads.client;
 
       let libraries_size = instance.library.get_download_size(&libraries).await;
       let assets_size = instance.asset.get_download_size(&asset_index).await;
-      let client_size = instance.library.get_client_download_size(&client, &meta.id).await;
+      let client_size = instance.library.get_client_download_size(&client, &client_id).await;
       let total = libraries_size.saturating_add(assets_size).saturating_add(client_size);
 
       if total == 0 {
@@ -54,7 +56,7 @@ pub(crate) fn download_game(instance: Instance, download: DownloadTask, meta: Pr
       }
 
       // client
-      let client_task = build_client_task(&instance, &download, client, &meta.id);
+      let client_task = build_client_task(&instance, &download, client, &client_id);
       let (_client, result) = client_task.await.map_err(|e| crate::Error::Download(e.to_string()))?;
       match result {
         Ok(DownloadResult::Cancelled) => return Ok(None),
@@ -98,9 +100,10 @@ fn build_lib_tasks(
   libraries: Vec<ProcessedLibrary>,
 ) -> Vec<DownloadJob<ProcessedLibrary>> {
   let mut tasks = Vec::new();
+  let mut queued = HashSet::new();
 
   for lib in libraries {
-    if lib.must_skip {
+    if lib.must_skip || !queued.insert(lib.path.clone()) {
       continue;
     }
 

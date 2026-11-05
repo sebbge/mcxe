@@ -21,6 +21,8 @@ pub struct ZuluPackage {
   pub url: String,
 }
 
+pub const DEFAULT_JAVA_VERSION: u16 = 8;
+
 pub struct JavaManager {
   pub java_dir: PathBuf,
 }
@@ -30,7 +32,7 @@ impl JavaManager {
   }
   //
   pub async fn get_java(&self, version: &Option<JavaVersion>) -> crate::Result<(PathBuf, u16)> {
-    let major_version = version.as_ref().map(|j| j.major_version).unwrap_or(21);
+    let major_version = version.as_ref().map(|j| j.major_version).unwrap_or(DEFAULT_JAVA_VERSION);
     let java_path = self.get_java_path(&major_version);
 
     if !self.test_java(&java_path).await? {

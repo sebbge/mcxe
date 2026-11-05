@@ -3,7 +3,7 @@ pub use models::*;
 
 pub mod platform;
 
-use std::collections::HashMap;
+use indexmap::IndexMap;
 use url::Url;
 
 // ===> Public wrappers
@@ -280,23 +280,10 @@ impl Library {
 
 impl FullVersionMeta {
   fn deduplicate_libraries(&mut self) -> crate::Result<()> {
-    let mut seen: HashMap<(String, String, Option<String>, String), Library> = HashMap::new();
-
+    let mut seen = IndexMap::new();
     for lib in std::mem::take(&mut self.libraries) {
-      let (group, name, version, classifier, extension) = lib.parse_lib_name()?;
-      let key = (group, name, classifier, extension);
-
-      match seen.get_mut(&key) {
-        Some(existing_lib) => {
-          let (_, _, existing_version, _, _) = existing_lib.parse_lib_name()?;
-          if version > existing_version {
-            *existing_lib = lib;
-          };
-        }
-        None => {
-          seen.insert(key, lib);
-        }
-      };
+      let (group, name, _, classifier, extension) = lib.parse_lib_name()?;
+      seen.insert((group, name, classifier, extension), lib);
     }
 
     self.libraries = seen.into_values().collect();
@@ -346,5 +333,30 @@ impl Arguments {
       game: process_args(self.game),
       jvm: process_args(self.jvm),
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn library(json: &str) -> Library {
+    serde_json::from_str(json).unwrap()
+  }
+
+  #[test]
+  fn library_path_is_built_from_its_name() {
+    let lib = library(r#"{"name": "org.lwjgl:lwjgl:3.3.3:natives-windows"}"#);
+    assert_eq!(lib.get_path_from_name().unwrap(), "org/lwjgl/lwjgl/3.3.3/lwjgl-3.3.3-natives-windows.jar");
+
+    let lib = library(r#"{"name": "com.google.guava:guava:31.1-jre"}"#);
+    assert_eq!(lib.get_path_from_name().unwrap(), "com/google/guava/guava/31.1-jre/guava-31.1-jre.jar");
+  }
+
+  #[test]
+  fn os_rules_skip_libraries_only_on_that_system() {
+    let lib =
+      library(r#"{"name": "a:b:1", "rules": [{"action": "allow"}, {"action": "disallow", "os": {"name": "osx"}}]}"#);
+    assert_eq!(lib.process_rules(), cfg!(target_os = "macos"));
   }
 }

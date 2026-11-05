@@ -93,7 +93,10 @@ pub(crate) async fn launch_game(
   meta: ProcessedVersionMeta,
   config: LaunchConfig,
 ) {
-  let mut command = match command::build(instance, &process, meta, &config).await {
+  process.start();
+  process.set_starting();
+
+  let mut command = match command::build(instance, meta, &config).await {
     Ok(cmd) => cmd,
     Err(e) => {
       tracing::error!("{}", e);
@@ -102,11 +105,7 @@ pub(crate) async fn launch_game(
     }
   };
 
-  let child = match command
-    .stdout(Stdio::piped()) // mc logs
-    .stderr(Stdio::piped())
-    .spawn()
-  {
+  let child = match command.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
     Ok(child) => child,
     Err(e) => {
       tracing::error!("failed to execute process: {}", e);
@@ -116,6 +115,7 @@ pub(crate) async fn launch_game(
   };
 
   tracing::info!("Minecraft is running");
+  process.set_running();
 
   tokio::spawn(watch_process(process, child));
 }
@@ -143,38 +143,25 @@ async fn watch_process(process: LaunchTask, mut child: Child) {
     });
   }
 
-  loop {
-    let tick = tokio::time::sleep(tokio::time::Duration::from_secs(1));
-
-    if process.until_aborted(tick).await.is_none() {
+  let exit = process.until_aborted(child.wait()).await;
+  match exit {
+    None => {
       if let Err(e) = child.kill().await {
         tracing::warn!("failed to kill process: {e}");
-        break;
       }
+      process.aborted();
+    }
+    Some(Ok(status)) if status.success() => {
       tracing::info!("game exited successfully");
       process.success();
-      break;
     }
-
-    process.set_running();
-
-    match child.try_wait() {
-      Ok(None) => continue,
-      Ok(Some(output)) => {
-        if output.success() {
-          tracing::info!("game exited successfully");
-          process.success();
-        } else {
-          tracing::error!("game exited with an error");
-          process.aborted();
-        }
-        break;
-      }
-      Err(e) => {
-        tracing::error!("error while waiting for process: {e}");
-        process.failed();
-        break;
-      }
+    Some(Ok(status)) => {
+      tracing::error!("game exited with {status}");
+      process.failed();
+    }
+    Some(Err(e)) => {
+      tracing::error!("error while waiting for process: {e}");
+      process.failed();
     }
   }
 }

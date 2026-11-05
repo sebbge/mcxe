@@ -81,7 +81,7 @@ impl InnerLauncher {
     let java_handle = match self.java.get_java(&meta.java_version).await {
       Ok(_) => None,
       Err(_) => {
-        let java_version = meta.java_version.as_ref().map(|j| j.major_version).unwrap_or(21);
+        let java_version = meta.java_version.as_ref().map(|j| j.major_version).unwrap_or(DEFAULT_JAVA_VERSION);
         let id = format!("jre-{}:{}", java_version, version_id);
 
         let (download, handle) = DownloadTask::new(id);

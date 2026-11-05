@@ -23,7 +23,7 @@ pub(crate) fn checksum(instance: Instance, progress: ProgressTask, meta: Process
       //--- Client
       let client_name = &format!("Client {}.jar", meta.id);
       progress.set_message(client_name);
-      let client_path = instance.library.get_client_path(&meta.id);
+      let client_path = instance.library.get_client_path(meta.client_id());
       let client_hash = Some(meta.downloads.client.sha1.as_ref());
       let result = check(&client_path, client_hash, client_name).await;
       rep.download_required |= record(result, &mut rep.missing_libraries, &mut rep.corrupted_libraries);
