@@ -1,7 +1,15 @@
 [package]
-name = "comet"
+name = "comet-minecraft"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
+description = "Download and launch Minecraft: Java Edition effortlessly"
+repository = "https://github.com/bllexz/comet"
+keywords = ["minecraft", "downloader", "launcher"]
+
+[lib]
+name = "comet"
 
 [features]
 ts-types = ["dep:ts-rs"]
