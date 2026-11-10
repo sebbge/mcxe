@@ -1,9 +1,9 @@
 use std::{path::PathBuf, sync::Arc};
 use tokio::sync::Semaphore;
 
-const DEFAULT_LAUNCHER_NAME: &str = "Comet";
+const DEFAULT_LAUNCHER_NAME: &str = "mcxe";
 const DEFAULT_LAUNCHER_VERSION: &str = "1.0.0";
-const DEFAULT_ROOT_DIR: &str = "./Comet";
+const DEFAULT_ROOT_DIR: &str = "./mcxe";
 const DEFAULT_ASSETS_URL: &str = "https://resources.download.minecraft.net/";
 const DEFAULT_MANIFEST_URL: &str = "https://piston-meta.mojang.com/mc/game/version_manifest.json";
 

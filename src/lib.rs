@@ -74,7 +74,7 @@ mod tests {
   #[tokio::test]
   #[ignore = "requires network"]
   async fn fetches_version_metadata_from_mojang() -> Result<()> {
-    let root = std::env::temp_dir().join("comet-test");
+    let root = std::env::temp_dir().join("mcxe-test");
     let launcher = Launcher::new(LauncherConfig::builder().root_dir(root).build());
     launcher.init().await?;
 

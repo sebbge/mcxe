@@ -3,10 +3,10 @@
 //! Run `download` to get a game version first,
 //! then `cargo run --example launch -- <version>`. Defaults to the latest release.
 
-use comet::{LaunchConfig, Launcher};
+use mcxe::{LaunchConfig, Launcher};
 
 #[tokio::main]
-async fn main() -> comet::Result<()> {
+async fn main() -> mcxe::Result<()> {
   tracing_subscriber::fmt::init(); // logging
 
   let launcher = Launcher::default();
@@ -20,8 +20,8 @@ async fn main() -> comet::Result<()> {
   let launch_conf = LaunchConfig::builder()
     .id("example_id")
     .version(&version)
-    .username("Player1234")
-    .directory("comet_example")
+    .username("Player12345")
+    .directory("mcxe_example")
     .build();
 
   let process_handle = launcher.launch(launch_conf).await?;

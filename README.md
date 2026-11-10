@@ -1,24 +1,24 @@
-[![Crates.io](https://img.shields.io/crates/v/comet-minecraft)](https://crates.io/crates/comet-minecraft)
-[![Docs.rs](https://img.shields.io/docsrs/comet-minecraft)](https://docs.rs/comet-minecraft)
-[![CI](https://github.com/bllexz/comet/actions/workflows/ci.yml/badge.svg)](https://github.com/bllexz/comet/actions/workflows/ci.yml)
-![License](https://img.shields.io/crates/l/comet-minecraft)
+[![Crates.io](https://img.shields.io/crates/v/mcxe)](https://crates.io/crates/mcxe)
+[![Docs.rs](https://img.shields.io/docsrs/mcxe)](https://docs.rs/mcxe)
+[![CI](https://github.com/sebbge/mcxe/actions/workflows/ci.yml/badge.svg)](https://github.com/sebbge/mcxe/actions/workflows/ci.yml)
+![License](https://img.shields.io/crates/l/mcxe)
 
-# comet
+# mcxe
 
 A Rust crate that lets you download and launch Minecraft: Java Edition effortlessly.
 
 ```toml
 [dependencies]
-comet-minecraft = "0.1"
+mcxe = "0.0.1-alpha"
 ```
 
 ## Example
 
 ```rust
-use comet::{LaunchConfig, Launcher, LauncherConfig};
+use mcxe::{LaunchConfig, Launcher, LauncherConfig};
 
 #[tokio::main]
-async fn main() -> comet::Result<()> {
+async fn main() -> mcxe::Result<()> {
   let launcher = Launcher::new(LauncherConfig::builder().root_dir("<launcher_directory>").build());
   launcher.init().await?;
 

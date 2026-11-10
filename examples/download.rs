@@ -2,10 +2,10 @@
 //!
 //! Run with `cargo run --example download -- <version>`. Defaults to the latest release.
 
-use comet::Launcher;
+use mcxe::Launcher;
 
 #[tokio::main]
-async fn main() -> comet::Result<()> {
+async fn main() -> mcxe::Result<()> {
   tracing_subscriber::fmt::init(); // logging
 
   let launcher = Launcher::default();
