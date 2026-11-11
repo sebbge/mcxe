@@ -32,14 +32,14 @@ pub(crate) fn download_java(instance: Instance, download: DownloadTask, version:
       crate::fs::zip::for_each(&zip_path, |mut file| {
         let mut path_parts = file.name().splitn(2, '/');
         let _ = path_parts.next();
-        let name = path_parts.next().unwrap_or("");
+        let name = path_parts.next().unwrap_or("").to_owned();
 
         if name.is_empty() {
           return Ok(());
         }
 
         let mut out_path = jre_dir.clone();
-        out_path.push(name);
+        out_path.push(&name);
 
         if file.name().ends_with('/') {
           crate::fs::create_dir_all_sync(&out_path)?;
